@@ -28,6 +28,7 @@ export class CameraController {
   private minZ = -18;
   private maxZ = 18;
   private eyeHeight = 2.4;
+  private isMouseDown = false;
 
   private onPointerLockChangeBound: () => void;
   private onMouseMoveBound: (e: MouseEvent) => void;
@@ -98,7 +99,7 @@ export class CameraController {
   }
 
   private onMouseMove(event: MouseEvent): void {
-    if (!this.isLocked) return;
+    if (!this.isLocked && !this.isMouseDown) return;
 
     const sens = (this.settings.mouseSensitivity || 1.0) * 0.002;
     const zoomFactor = this.isZoomed ? 0.4 : 1.0;
@@ -117,14 +118,18 @@ export class CameraController {
   }
 
   private onMouseDown(event: MouseEvent): void {
-    if (event.button === 2) {
+    if (event.button === 0) {
+      this.isMouseDown = true;
+    } else if (event.button === 2) {
       // Right click: engage binocular zoom
       this.setZoom(true);
     }
   }
 
   private onMouseUp(event: MouseEvent): void {
-    if (event.button === 2) {
+    if (event.button === 0) {
+      this.isMouseDown = false;
+    } else if (event.button === 2) {
       this.setZoom(false);
     }
   }

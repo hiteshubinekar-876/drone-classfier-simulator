@@ -58,6 +58,7 @@ export const SimulationScreen: React.FC<SimulationScreenProps> = ({
   const [isMuted, setIsMuted] = useState<boolean>(false);
 
   // Target tracking state
+  const isFinishingRef = useRef<boolean>(false);
   const [activeLocks, setActiveLocks] = useState<TargetLockInfo[]>([]);
   const [activeTargetLock, setActiveTargetLock] = useState<TargetLockInfo | null>(null);
   const [classifyingTarget, setClassifyingTarget] = useState<TargetLockInfo | null>(null);
@@ -96,6 +97,8 @@ export const SimulationScreen: React.FC<SimulationScreenProps> = ({
     scenarioEngineRef.current = scenarioEngine;
     scenarioEngine.start();
 
+    let lastHudUpdateMs = 0;
+
     // Main Render / Tick Loop
     renderEngine.start((deltaSec) => {
       if (scenarioEngine.isPaused || scenarioEngine.isCompleted) return;
@@ -103,34 +106,39 @@ export const SimulationScreen: React.FC<SimulationScreenProps> = ({
       scenarioEngine.update(deltaSec);
       cameraController.update(deltaSec);
 
-      const elapsed = scenarioEngine.elapsedSimTimeSec;
-      setElapsedSec(elapsed);
-      setIsZoomed(cameraController.isZoomed);
-      setBearingDeg(cameraController.getBearingDeg());
-      setPitchDeg(cameraController.getPitchDeg());
+      const now = performance.now();
+      if (now - lastHudUpdateMs >= 65) { // ~15-20 FPS for React HUD state
+        lastHudUpdateMs = now;
 
-      // Evaluate targets
-      const screenW = containerRef.current?.clientWidth || window.innerWidth;
-      const screenH = containerRef.current?.clientHeight || window.innerHeight;
+        const elapsed = scenarioEngine.elapsedSimTimeSec;
+        setElapsedSec(elapsed);
+        setIsZoomed(cameraController.isZoomed);
+        setBearingDeg(cameraController.getBearingDeg());
+        setPitchDeg(cameraController.getPitchDeg());
 
-      const locks = targetTracker.evaluateActiveTargets(
-        scenarioEngine.getActiveDrones(),
-        cameraController.isZoomed,
-        screenW,
-        screenH
-      );
-      setActiveLocks(locks);
+        // Evaluate targets
+        const screenW = containerRef.current?.clientWidth || window.innerWidth;
+        const screenH = containerRef.current?.clientHeight || window.innerHeight;
 
-      const primary = locks.find((l) => l.isLocked) || null;
-      setActiveTargetLock(primary);
+        const locks = targetTracker.evaluateActiveTargets(
+          scenarioEngine.getActiveDrones(),
+          cameraController.isZoomed,
+          screenW,
+          screenH
+        );
+        setActiveLocks(locks);
 
-      if (primary) {
-        scenarioEngine.emitEvent('TARGET_LOCK_ACQUIRED', {
-          targetId: primary.targetId,
-          distanceMeters: primary.distanceMeters,
-          cameraBearing: cameraController.getBearingDeg(),
-          cameraPitch: cameraController.getPitchDeg()
-        });
+        const primary = locks.find((l) => l.isLocked) || null;
+        setActiveTargetLock(primary);
+
+        if (primary) {
+          scenarioEngine.emitEvent('TARGET_LOCK_ACQUIRED', {
+            targetId: primary.targetId,
+            distanceMeters: primary.distanceMeters,
+            cameraBearing: cameraController.getBearingDeg(),
+            cameraPitch: cameraController.getPitchDeg()
+          });
+        }
       }
 
       // Check scenario completion
@@ -172,7 +180,6 @@ export const SimulationScreen: React.FC<SimulationScreenProps> = ({
     if (isPaused) {
       scenarioEngineRef.current.resume();
       setIsPaused(false);
-      cameraControllerRef.current?.requestLock();
     } else {
       scenarioEngineRef.current.pause();
       setIsPaused(true);
@@ -214,17 +221,17 @@ export const SimulationScreen: React.FC<SimulationScreenProps> = ({
           handleCompleteSession(scenarioEngineRef.current);
         }
       }, 500);
-    } else {
-      cameraControllerRef.current?.requestLock();
     }
   };
 
   const handleClassificationCancel = () => {
     setClassifyingTarget(null);
-    cameraControllerRef.current?.requestLock();
   };
 
   const handleCompleteSession = async (engine: ScenarioEngine) => {
+    if (isFinishingRef.current) return;
+    isFinishingRef.current = true;
+
     const events = engine.getEvents();
     const score = evaluateSession(scenario, events, sessionId);
 
@@ -270,7 +277,7 @@ export const SimulationScreen: React.FC<SimulationScreenProps> = ({
       {/* 3D WebGL Canvas Container */}
       <div
         ref={containerRef}
-        style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', cursor: 'crosshair' }}
+        style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', cursor: 'crosshair', zIndex: 1 }}
         onClick={() => {
           if (!isPaused && !classifyingTarget) {
             cameraControllerRef.current?.requestLock();
@@ -466,6 +473,57 @@ export const SimulationScreen: React.FC<SimulationScreenProps> = ({
               {classifiedTargetIds.size} / {scenario.targets.length} CONTACTS
             </span>
           </div>
+
+          {/* Active Contacts Quick Classification Tray */}
+          {activeLocks.length > 0 && (
+            <div style={{ marginTop: '10px', paddingTop: '8px', borderTop: '1px solid var(--color-border-subtle)' }}>
+              <div style={{ fontSize: '0.68rem', color: 'var(--color-teal-muted)', fontFamily: 'var(--font-mono)', marginBottom: '6px' }}>
+                AIRSPACE CONTACTS ({activeLocks.length}):
+              </div>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '5px' }}>
+                {activeLocks.map((lock) => {
+                  const isClassified = classifiedTargetIds.has(lock.targetId);
+                  return (
+                    <div
+                      key={lock.targetId}
+                      style={{
+                        display: 'flex',
+                        justifyContent: 'space-between',
+                        alignItems: 'center',
+                        fontSize: '0.72rem',
+                        background: 'rgba(12, 20, 23, 0.6)',
+                        padding: '4px 8px',
+                        borderRadius: '3px',
+                        border: '1px solid rgba(141, 217, 192, 0.1)'
+                      }}
+                    >
+                      <span style={{ fontFamily: 'var(--font-mono)', color: 'var(--color-text-primary)' }}>
+                        {lock.callsign} <span style={{ color: 'var(--color-text-muted)' }}>[{lock.distanceMeters}m]</span>
+                      </span>
+                      {isClassified ? (
+                        <span style={{ color: 'var(--color-success-green)', fontFamily: 'var(--font-mono)', fontSize: '0.68rem' }}>
+                          ✓ CLASSIFIED
+                        </span>
+                      ) : (
+                        <button
+                          onClick={() => triggerClassification(lock)}
+                          className="tactical-btn"
+                          style={{
+                            padding: '3px 8px',
+                            fontSize: '0.68rem',
+                            borderColor: 'var(--color-accent-mint)',
+                            color: 'var(--color-accent-mint)'
+                          }}
+                        >
+                          CLASSIFY
+                        </button>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          )}
         </div>
 
         {/* Center Compass Tape */}
