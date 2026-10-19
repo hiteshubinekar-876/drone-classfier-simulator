@@ -26,6 +26,10 @@ export class RenderEngine {
       powerPreference: 'high-performance'
     });
 
+    this.renderer.outputColorSpace = THREE.SRGBColorSpace;
+    this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
+    this.renderer.toneMappingExposure = 1.05;
+
     this.applySettings(settings);
 
     this.renderer.setSize(width, height);

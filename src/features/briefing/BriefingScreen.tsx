@@ -4,6 +4,7 @@ import {
   ArrowLeft,
   Play
 } from 'lucide-react';
+import { inputManager, formatKeyDisplay } from '../../services/inputManager';
 
 interface BriefingScreenProps {
   scenario: ScenarioDefinition;
@@ -19,8 +20,8 @@ export const BriefingScreen: React.FC<BriefingScreenProps> = ({
   return (
     <div
       style={{
-        width: '100vw',
-        height: '100vh',
+        width: '100%',
+        height: '100dvh',
         display: 'flex',
         flexDirection: 'column',
         background: 'linear-gradient(135deg, #0c1417 0%, #131f24 50%, #070c0e 100%)',
@@ -30,12 +31,14 @@ export const BriefingScreen: React.FC<BriefingScreenProps> = ({
       {/* Top Header */}
       <header
         style={{
-          height: '64px',
+          minHeight: '64px',
           borderBottom: '1px solid var(--color-border-subtle)',
-          padding: '0 32px',
+          padding: '12px clamp(16px, 3vw, 32px)',
           display: 'flex',
           alignItems: 'center',
           justifyContent: 'space-between',
+          flexWrap: 'wrap',
+          gap: '12px',
           background: 'rgba(15, 24, 28, 0.85)',
           backdropFilter: 'blur(10px)',
           zIndex: 20
@@ -69,9 +72,9 @@ export const BriefingScreen: React.FC<BriefingScreenProps> = ({
         style={{
           flex: 1,
           display: 'grid',
-          gridTemplateColumns: '1.2fr 1fr',
-          gap: '32px',
-          padding: '36px 48px',
+          gridTemplateColumns: 'repeat(auto-fit, minmax(min(100%, 340px), 1fr))',
+          gap: '24px',
+          padding: 'clamp(20px, 3vw, 40px)',
           overflowY: 'auto'
         }}
       >
@@ -102,7 +105,7 @@ export const BriefingScreen: React.FC<BriefingScreenProps> = ({
             </p>
 
             {/* Mission Key Parameters */}
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '12px' }}>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(90px, 1fr))', gap: '12px' }}>
               <div style={{ background: 'rgba(15, 24, 28, 0.6)', padding: '12px', borderRadius: '4px', border: '1px solid var(--color-border-subtle)' }}>
                 <div style={{ fontSize: '0.7rem', color: 'var(--color-text-muted)', fontFamily: 'var(--font-mono)' }}>DURATION</div>
                 <div style={{ fontSize: '1.1rem', fontWeight: 700, color: 'var(--color-text-primary)', marginTop: '2px' }}>
@@ -206,17 +209,34 @@ export const BriefingScreen: React.FC<BriefingScreenProps> = ({
 
             <div style={{ display: 'grid', gridTemplateColumns: '1fr', gap: '10px' }}>
               {[
-                { key: 'W / A / S / D', desc: 'Walk and reposition inside observation post' },
+                {
+                  key: `${formatKeyDisplay(inputManager.getBinding('moveForward'))} / ${formatKeyDisplay(inputManager.getBinding('moveLeft'))} / ${formatKeyDisplay(inputManager.getBinding('moveBackward'))} / ${formatKeyDisplay(inputManager.getBinding('moveRight'))}`,
+                  desc: 'Walk and reposition inside observation post'
+                },
                 { key: 'MOUSE', desc: 'Free-look pan and pitch angle' },
-                { key: 'RMB or SHIFT', desc: 'Engage 3.2x Binocular Zoom magnification' },
-                { key: 'SPACE or CLICK', desc: 'Acquire crosshair lock & trigger Classification' },
-                { key: 'KEYS 1 – 4', desc: 'Rapid threat archetype selection hotkeys' },
-                { key: 'ESC or P', desc: 'Pause simulation / open tactical options' }
+                {
+                  key: `${formatKeyDisplay(inputManager.getBinding('toggleZoom'))} or RMB`,
+                  desc: 'Engage 3.2x Binocular Zoom magnification'
+                },
+                {
+                  key: `${formatKeyDisplay(inputManager.getBinding('triggerClassification'))} or CLICK`,
+                  desc: 'Acquire crosshair lock & trigger Classification'
+                },
+                {
+                  key: `${formatKeyDisplay(inputManager.getBinding('selectArchetype1'))} – ${formatKeyDisplay(inputManager.getBinding('selectArchetype4'))}`,
+                  desc: 'Rapid threat archetype selection hotkeys'
+                },
+                {
+                  key: `${formatKeyDisplay(inputManager.getBinding('pauseSimulation'))}`,
+                  desc: 'Pause simulation / open tactical options'
+                }
               ].map((c) => (
                 <div
-                  key={c.key}
+                  key={c.desc}
                   style={{
                     display: 'flex',
+                    flexWrap: 'wrap',
+                    gap: '8px',
                     alignItems: 'center',
                     justifyContent: 'space-between',
                     padding: '8px 12px',

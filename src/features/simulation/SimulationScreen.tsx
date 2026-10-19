@@ -17,6 +17,7 @@ import { evaluateSession } from '../../game/assessment/ScoringEngine';
 import { storage } from '../../data/indexedDbAdapter';
 import { CompassTape } from './CompassTape';
 import { ClassificationDrawer } from './ClassificationDrawer';
+import { inputManager, formatKeyDisplay } from '../../services/inputManager';
 import {
   Eye,
   Pause,
@@ -56,13 +57,27 @@ export const SimulationScreen: React.FC<SimulationScreenProps> = ({
   const [bearingDeg, setBearingDeg] = useState<number>(0);
   const [pitchDeg, setPitchDeg] = useState<number>(0);
   const [isMuted, setIsMuted] = useState<boolean>(false);
+  const [currentSensitivity, setCurrentSensitivity] = useState<number>(settings.mouseSensitivity || 1.0);
+  const [isDebriefOpen, setIsDebriefOpen] = useState<boolean>(false);
 
   // Target tracking state
   const isFinishingRef = useRef<boolean>(false);
+  const lastLockTargetIdRef = useRef<string | null>(null);
+  const lastLockTimeRef = useRef<number>(0);
   const [activeLocks, setActiveLocks] = useState<TargetLockInfo[]>([]);
   const [activeTargetLock, setActiveTargetLock] = useState<TargetLockInfo | null>(null);
   const [classifyingTarget, setClassifyingTarget] = useState<TargetLockInfo | null>(null);
   const [classifiedTargetIds, setClassifiedTargetIds] = useState<Set<string>>(new Set());
+
+  // Synchronize settings changes to camera controller dynamically
+  useEffect(() => {
+    if (cameraControllerRef.current) {
+      cameraControllerRef.current.updateSettings({
+        ...settings,
+        mouseSensitivity: currentSensitivity
+      });
+    }
+  }, [settings, currentSensitivity]);
 
   // Initialize 3D Engine and Simulation
   useEffect(() => {
@@ -84,7 +99,7 @@ export const SimulationScreen: React.FC<SimulationScreenProps> = ({
     const cameraController = new CameraController(
       renderEngine.camera,
       renderEngine.renderer.domElement,
-      settings
+      { ...settings, mouseSensitivity: currentSensitivity }
     );
     cameraControllerRef.current = cameraController;
 
@@ -92,8 +107,14 @@ export const SimulationScreen: React.FC<SimulationScreenProps> = ({
     const targetTracker = new TargetTracker(renderEngine.camera);
     targetTrackerRef.current = targetTracker;
 
-    // Scenario Engine
-    const scenarioEngine = new ScenarioEngine(scenario, sessionId, renderEngine.scene);
+    // Scenario Engine with configurable observation pacing
+    const pacingMult =
+      settings.targetObservationPacing === 'relaxed'
+        ? 1.7
+        : settings.targetObservationPacing === 'extended'
+        ? 1.35
+        : 1.0;
+    const scenarioEngine = new ScenarioEngine(scenario, sessionId, renderEngine.scene, pacingMult);
     scenarioEngineRef.current = scenarioEngine;
     scenarioEngine.start();
 
@@ -116,7 +137,7 @@ export const SimulationScreen: React.FC<SimulationScreenProps> = ({
         setBearingDeg(cameraController.getBearingDeg());
         setPitchDeg(cameraController.getPitchDeg());
 
-        // Evaluate targets
+        // Evaluate targets within container dimensions
         const screenW = containerRef.current?.clientWidth || window.innerWidth;
         const screenH = containerRef.current?.clientHeight || window.innerHeight;
 
@@ -132,18 +153,28 @@ export const SimulationScreen: React.FC<SimulationScreenProps> = ({
         setActiveTargetLock(primary);
 
         if (primary) {
-          scenarioEngine.emitEvent('TARGET_LOCK_ACQUIRED', {
-            targetId: primary.targetId,
-            distanceMeters: primary.distanceMeters,
-            cameraBearing: cameraController.getBearingDeg(),
-            cameraPitch: cameraController.getPitchDeg()
-          });
+          const nowMs = performance.now();
+          if (
+            lastLockTargetIdRef.current !== primary.targetId ||
+            nowMs - lastLockTimeRef.current >= 2500
+          ) {
+            lastLockTargetIdRef.current = primary.targetId;
+            lastLockTimeRef.current = nowMs;
+            scenarioEngine.emitEvent('TARGET_LOCK_ACQUIRED', {
+              targetId: primary.targetId,
+              distanceMeters: primary.distanceMeters,
+              cameraBearing: cameraController.getBearingDeg(),
+              cameraPitch: cameraController.getPitchDeg()
+            });
+          }
         }
       }
 
-      // Check scenario completion
+      // Check scenario completion - halt simulation and present debrief without automatic navigation
       if (scenarioEngine.isCompleted) {
-        handleCompleteSession(scenarioEngine);
+        cameraController.unlock();
+        cameraController.setPaused(true);
+        setIsDebriefOpen(true);
       }
     });
 
@@ -159,35 +190,42 @@ export const SimulationScreen: React.FC<SimulationScreenProps> = ({
   // Keyboard controls for pause and classification trigger
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.key === 'Escape' || e.key === 'p' || e.key === 'P') {
-        if (!classifyingTarget) {
+      if (inputManager.isInputElement(e.target)) return;
+
+      if (inputManager.matchesAction(e, 'pauseSimulation')) {
+        if (!classifyingTarget && !isDebriefOpen) {
           togglePause();
         }
-      } else if (e.code === 'Space') {
-        if (activeTargetLock && !classifyingTarget) {
+      } else if (inputManager.matchesAction(e, 'triggerClassification')) {
+        if (activeTargetLock && !classifyingTarget && !isDebriefOpen && !classifiedTargetIds.has(activeTargetLock.targetId)) {
           triggerClassification(activeTargetLock);
         }
+      } else if (inputManager.matchesAction(e, 'toggleMute')) {
+        toggleMute();
       }
     };
 
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [activeTargetLock, classifyingTarget, isPaused]);
+  }, [activeTargetLock, classifyingTarget, isPaused, isDebriefOpen, classifiedTargetIds]);
 
   const togglePause = () => {
-    if (!scenarioEngineRef.current || scenarioEngineRef.current.isCompleted) return;
+    if (!scenarioEngineRef.current || scenarioEngineRef.current.isCompleted || isDebriefOpen) return;
 
     if (isPaused) {
       scenarioEngineRef.current.resume();
+      cameraControllerRef.current?.setPaused(false);
       setIsPaused(false);
     } else {
       scenarioEngineRef.current.pause();
+      cameraControllerRef.current?.setPaused(true);
       setIsPaused(true);
       cameraControllerRef.current?.unlock();
     }
   };
 
   const triggerClassification = (lock: TargetLockInfo) => {
+    if (classifiedTargetIds.has(lock.targetId)) return;
     cameraControllerRef.current?.unlock();
     setClassifyingTarget(lock);
   };
@@ -199,6 +237,11 @@ export const SimulationScreen: React.FC<SimulationScreenProps> = ({
     if (!classifyingTarget || !scenarioEngineRef.current) return;
 
     const targetId = classifyingTarget.targetId;
+    if (classifiedTargetIds.has(targetId)) {
+      setClassifyingTarget(null);
+      return;
+    }
+
     setClassifiedTargetIds((prev) => new Set(prev).add(targetId));
 
     scenarioEngineRef.current.emitEvent('CLASSIFICATION_SUBMITTED', {
@@ -212,15 +255,15 @@ export const SimulationScreen: React.FC<SimulationScreenProps> = ({
 
     setClassifyingTarget(null);
 
-    // If all targets classified, complete mission early
+    // If all scheduled targets are classified, conclude and present debrief with deliberate proceed action
     const updatedCount = classifiedTargetIds.size + 1;
     if (updatedCount >= scenario.targets.length) {
-      setTimeout(() => {
-        if (scenarioEngineRef.current) {
-          scenarioEngineRef.current.complete();
-          handleCompleteSession(scenarioEngineRef.current);
-        }
-      }, 500);
+      if (scenarioEngineRef.current) {
+        scenarioEngineRef.current.complete();
+      }
+      cameraControllerRef.current?.unlock();
+      cameraControllerRef.current?.setPaused(true);
+      setIsDebriefOpen(true);
     }
   };
 
@@ -233,7 +276,7 @@ export const SimulationScreen: React.FC<SimulationScreenProps> = ({
     isFinishingRef.current = true;
 
     const events = engine.getEvents();
-    const score = evaluateSession(scenario, events, sessionId);
+    const score = evaluateSession(engine.scenario, events, sessionId);
 
     const sessionRecord: TrainingSession = {
       id: sessionId,
@@ -273,42 +316,91 @@ export const SimulationScreen: React.FC<SimulationScreenProps> = ({
   const progressPercent = Math.min(100, (elapsedSec / scenario.durationSeconds) * 100);
 
   return (
-    <div style={{ position: 'relative', width: '100vw', height: '100vh', overflow: 'hidden' }}>
+    <div style={{ position: 'relative', width: '100%', height: '100%', minHeight: '100dvh', overflow: 'hidden' }}>
       {/* 3D WebGL Canvas Container */}
       <div
         ref={containerRef}
         style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', cursor: 'crosshair', zIndex: 1 }}
         onClick={() => {
-          if (!isPaused && !classifyingTarget) {
+          if (!isPaused && !classifyingTarget && !isDebriefOpen) {
             cameraControllerRef.current?.requestLock();
           }
         }}
       />
 
-      {/* Binocular Zoom Vignette */}
+      {/* Binocular Zoom Optical Vignette */}
       {isZoomed && (
         <div className="binocular-overlay">
           <div className="binocular-crosshair">
-            <svg width="420" height="420" viewBox="0 0 420 420">
-              <circle cx="210" cy="210" r="200" fill="none" stroke="rgba(141, 217, 192, 0.4)" strokeWidth="1.5" strokeDasharray="4 6" />
-              <line x1="10" y1="210" x2="410" y2="210" stroke="rgba(141, 217, 192, 0.6)" strokeWidth="1" />
-              <line x1="210" y1="10" x2="210" y2="410" stroke="rgba(141, 217, 192, 0.6)" strokeWidth="1" />
-              {/* Stadia ticks */}
-              {[-120, -80, -40, 40, 80, 120].map((offset) => (
-                <React.Fragment key={offset}>
-                  <line x1={210 + offset} y1="205" x2={210 + offset} y2="215" stroke="var(--color-accent-mint)" strokeWidth="1" />
-                  <line x1="205" y1={210 + offset} x2="215" y2={210 + offset} stroke="var(--color-accent-mint)" strokeWidth="1" />
+            <svg
+              viewBox="0 0 600 600"
+              style={{
+                width: 'min(82vmin, 560px)',
+                height: 'min(82vmin, 560px)',
+                maxWidth: '92vw',
+                maxHeight: '92vh'
+              }}
+            >
+              {/* Outer Optical Boundary */}
+              <circle cx="300" cy="300" r="280" fill="none" stroke="rgba(141, 217, 192, 0.45)" strokeWidth="1.5" strokeDasharray="6 8" />
+              <circle cx="300" cy="300" r="285" fill="none" stroke="rgba(141, 217, 192, 0.2)" strokeWidth="1" />
+              
+              {/* Main Axis Reticle Lines */}
+              <line x1="30" y1="300" x2="570" y2="300" stroke="rgba(141, 217, 192, 0.65)" strokeWidth="1.2" />
+              <line x1="300" y1="30" x2="300" y2="570" stroke="rgba(141, 217, 192, 0.65)" strokeWidth="1.2" />
+              
+              {/* Center Open Circle */}
+              <circle cx="300" cy="300" r="16" fill="none" stroke="var(--color-accent-mint)" strokeWidth="1.5" />
+              <circle cx="300" cy="300" r="2" fill="var(--color-accent-mint)" />
+
+              {/* Horizontal Milliradian Stadia Ticks */}
+              {[-220, -180, -140, -100, -60, 60, 100, 140, 180, 220].map((offset) => (
+                <React.Fragment key={`h-${offset}`}>
+                  <line x1={300 + offset} y1="293" x2={300 + offset} y2="307" stroke="var(--color-accent-mint)" strokeWidth="1.2" />
+                  <text x={300 + offset} y="286" fill="rgba(141,217,192,0.8)" fontSize="9" fontFamily="var(--font-mono)" textAnchor="middle">
+                    {Math.abs(offset / 10)}
+                  </text>
                 </React.Fragment>
               ))}
+
+              {/* Vertical Elevation Ladder Ticks */}
+              {[-220, -180, -140, -100, -60, 60, 100, 140, 180, 220].map((offset) => (
+                <React.Fragment key={`v-${offset}`}>
+                  <line x1="293" y1={300 + offset} x2="307" y2={300 + offset} stroke="var(--color-accent-mint)" strokeWidth="1.2" />
+                  <text x="316" y={303 + offset} fill="rgba(141,217,192,0.8)" fontSize="9" fontFamily="var(--font-mono)">
+                    {Math.abs(offset / 10)}
+                  </text>
+                </React.Fragment>
+              ))}
+
+              {/* Stadiametric Rangefinder Guide curve (Lower Left) */}
+              <path d="M 120 440 Q 180 435 240 370" fill="none" stroke="rgba(141, 217, 192, 0.5)" strokeWidth="1.2" strokeDasharray="3 3" />
+              <line x1="120" y1="440" x2="240" y2="440" stroke="rgba(141, 217, 192, 0.4)" strokeWidth="1" />
+              <text x="140" y="456" fill="var(--color-accent-mint)" fontSize="8.5" fontFamily="var(--font-mono)">
+                TARGET HEIGHT 1.0M : RANGE ESTIMATE
+              </text>
             </svg>
           </div>
-          <div style={{ position: 'absolute', bottom: '80px', left: '50%', transform: 'translateX(-50%)', fontFamily: 'var(--font-mono)', fontSize: '0.8rem', color: 'var(--color-accent-mint)', letterSpacing: '0.15em' }}>
-            OPTICAL BINOCULAR MAGNIFICATION: 3.2X
+          <div style={{
+            position: 'absolute',
+            bottom: '68px',
+            left: '50%',
+            transform: 'translateX(-50%)',
+            fontFamily: 'var(--font-mono)',
+            fontSize: '0.8rem',
+            color: 'var(--color-accent-mint)',
+            letterSpacing: '0.18em',
+            background: 'rgba(12,20,23,0.75)',
+            padding: '4px 16px',
+            borderRadius: '4px',
+            border: '1px solid var(--color-border-subtle)'
+          }}>
+            OPTICAL BINOCULAR MAGNIFICATION: 3.2X // MIL-DOT RETICLE
           </div>
         </div>
       )}
 
-      {/* Center Reticle / Dynamic Lock Bracket */}
+      {/* Center Tactical Reticle / Dynamic Lock Bracket */}
       <div
         style={{
           position: 'absolute',
@@ -322,64 +414,207 @@ export const SimulationScreen: React.FC<SimulationScreenProps> = ({
           alignItems: 'center'
         }}
       >
-        <div
+        <svg
+          width={activeTargetLock ? '64' : '44'}
+          height={activeTargetLock ? '64' : '44'}
+          viewBox="0 0 64 64"
           style={{
-            width: activeTargetLock ? '48px' : '28px',
-            height: activeTargetLock ? '48px' : '28px',
-            border: activeTargetLock
-              ? '2px solid var(--color-accent-mint)'
-              : '1px solid rgba(141, 217, 192, 0.5)',
-            borderRadius: activeTargetLock ? '4px' : '50%',
-            transition: 'all 0.15s ease',
-            boxShadow: activeTargetLock ? '0 0 16px rgba(141, 217, 192, 0.6)' : 'none',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center'
+            transition: 'all 0.18s cubic-bezier(0.16, 1, 0.3, 1)',
+            filter: activeTargetLock ? 'drop-shadow(0 0 8px rgba(141, 217, 192, 0.8))' : 'none'
           }}
         >
-          <div
-            style={{
-              width: '4px',
-              height: '4px',
-              backgroundColor: activeTargetLock ? 'var(--color-accent-mint)' : 'var(--color-teal-muted)',
-              borderRadius: '50%'
-            }}
+          {/* Outer circle */}
+          <circle
+            cx="32"
+            cy="32"
+            r={activeTargetLock ? '28' : '18'}
+            fill="none"
+            stroke={activeTargetLock ? 'var(--color-accent-mint)' : 'rgba(141, 217, 192, 0.35)'}
+            strokeWidth="1.2"
+            strokeDasharray={activeTargetLock ? '4 2' : 'none'}
           />
-        </div>
+
+          {/* Crosshair ticks */}
+          <line x1="32" y1="6" x2="32" y2="14" stroke={activeTargetLock ? 'var(--color-accent-mint)' : 'rgba(141, 217, 192, 0.5)'} strokeWidth="1.5" />
+          <line x1="32" y1="50" x2="32" y2="58" stroke={activeTargetLock ? 'var(--color-accent-mint)' : 'rgba(141, 217, 192, 0.5)'} strokeWidth="1.5" />
+          <line x1="6" y1="32" x2="14" y2="32" stroke={activeTargetLock ? 'var(--color-accent-mint)' : 'rgba(141, 217, 192, 0.5)'} strokeWidth="1.5" />
+          <line x1="50" y1="32" x2="58" y2="32" stroke={activeTargetLock ? 'var(--color-accent-mint)' : 'rgba(141, 217, 192, 0.5)'} strokeWidth="1.5" />
+
+          {/* Corner Lock Brackets */}
+          {activeTargetLock && (
+            <>
+              {/* Top-Left */}
+              <path d="M 12 20 L 12 12 L 20 12" fill="none" stroke="var(--color-accent-mint)" strokeWidth="2.5" />
+              {/* Top-Right */}
+              <path d="M 44 12 L 52 12 L 52 20" fill="none" stroke="var(--color-accent-mint)" strokeWidth="2.5" />
+              {/* Bottom-Left */}
+              <path d="M 12 44 L 12 52 L 20 52" fill="none" stroke="var(--color-accent-mint)" strokeWidth="2.5" />
+              {/* Bottom-Right */}
+              <path d="M 52 44 L 52 52 L 44 52" fill="none" stroke="var(--color-accent-mint)" strokeWidth="2.5" />
+            </>
+          )}
+
+          {/* Center Pip */}
+          <circle cx="32" cy="32" r="2.5" fill={activeTargetLock ? 'var(--color-accent-mint)' : 'rgba(141, 217, 192, 0.8)'} />
+        </svg>
 
         {activeTargetLock && (
           <div
             style={{
-              marginTop: '10px',
-              background: 'rgba(12, 20, 23, 0.85)',
+              marginTop: '12px',
+              background: 'rgba(12, 20, 23, 0.92)',
               border: '1px solid var(--color-accent-mint)',
-              borderRadius: '4px',
-              padding: '4px 10px',
+              borderRadius: '6px',
+              padding: '6px 14px',
               fontFamily: 'var(--font-mono)',
-              fontSize: '0.75rem',
+              fontSize: '0.78rem',
               color: 'var(--color-accent-mint)',
               textAlign: 'center',
-              boxShadow: 'var(--shadow-glow)'
+              boxShadow: '0 0 24px rgba(141, 217, 192, 0.35)',
+              backdropFilter: 'blur(8px)'
             }}
           >
-            <div>TARGET LOCK: <strong>{activeTargetLock.callsign}</strong></div>
-            <div style={{ fontSize: '0.7rem', color: 'var(--color-text-secondary)' }}>
-              RANGE: {activeTargetLock.distanceMeters}m
+            <div style={{ letterSpacing: '0.06em' }}>
+              TARGET LOCK: <strong>{activeTargetLock.callsign}</strong>
             </div>
-            <div style={{ marginTop: '4px', color: '#ffffff', fontWeight: 700, fontSize: '0.7rem', textTransform: 'uppercase' }}>
+            <div style={{ fontSize: '0.7rem', color: 'var(--color-text-secondary)', marginTop: '2px' }}>
+              RNG: {activeTargetLock.distanceMeters}m | BRG: {activeTargetLock.bearingDeg}° | PITCH: {activeTargetLock.pitchDeg}°
+            </div>
+            <div style={{ marginTop: '5px', color: '#ffffff', fontWeight: 700, fontSize: '0.72rem', letterSpacing: '0.08em', textTransform: 'uppercase' }}>
               [SPACE / CLICK TO CLASSIFY]
             </div>
           </div>
         )}
       </div>
 
+      {/* Exercise Objectives Concluded - Deliberate Trainee Debrief Dialog */}
+      {isDebriefOpen && (
+        <div
+          style={{
+            position: 'absolute',
+            inset: 0,
+            background: 'rgba(10, 16, 19, 0.88)',
+            backdropFilter: 'blur(12px)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            zIndex: 100,
+            padding: '16px'
+          }}
+        >
+          <div
+            className="tactical-panel"
+            style={{
+              width: 'min(94vw, 560px)',
+              padding: 'clamp(20px, 4vw, 36px)',
+              border: '1px solid var(--color-accent-mint)',
+              boxShadow: '0 0 48px rgba(141, 217, 192, 0.3)',
+              textAlign: 'center'
+            }}
+          >
+            <div className="tactical-header-tag" style={{ marginBottom: '8px' }}>
+              EXERCISE AIRSPACE ENGAGEMENT CONCLUDED
+            </div>
+            <h2 style={{ fontSize: 'clamp(1.2rem, 3vw, 1.6rem)', fontWeight: 800, color: 'var(--color-text-primary)', marginBottom: '6px' }}>
+              {scenario.codename} DEBRIEF
+            </h2>
+            <p style={{ fontSize: '0.86rem', color: 'var(--color-text-secondary)', lineHeight: 1.45, marginBottom: '20px' }}>
+              All scheduled aerial target corridors have completed. Review contact tracking outcomes below and confirm progression to After-Action Review.
+            </p>
+
+            {/* Target Outcome Summary Cards */}
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(min(100%, 140px), 1fr))', gap: '10px', marginBottom: '20px' }}>
+              <div style={{ background: 'rgba(15, 24, 28, 0.7)', padding: '12px', borderRadius: '4px', border: '1px solid var(--color-border-subtle)' }}>
+                <div style={{ fontSize: '0.7rem', color: 'var(--color-text-muted)', fontFamily: 'var(--font-mono)' }}>SIMULATION TIME</div>
+                <div style={{ fontSize: '1.1rem', fontWeight: 700, color: 'var(--color-text-primary)', marginTop: '2px' }}>
+                  {Math.floor(elapsedSec)}s / {scenario.durationSeconds}s
+                </div>
+              </div>
+              <div style={{ background: 'rgba(15, 24, 28, 0.7)', padding: '12px', borderRadius: '4px', border: '1px solid var(--color-border-subtle)' }}>
+                <div style={{ fontSize: '0.7rem', color: 'var(--color-text-muted)', fontFamily: 'var(--font-mono)' }}>CLASSIFIED</div>
+                <div style={{ fontSize: '1.1rem', fontWeight: 700, color: 'var(--color-success-green)', marginTop: '2px' }}>
+                  {classifiedTargetIds.size} / {scenario.targets.length}
+                </div>
+              </div>
+              <div style={{ background: 'rgba(15, 24, 28, 0.7)', padding: '12px', borderRadius: '4px', border: '1px solid var(--color-border-subtle)' }}>
+                <div style={{ fontSize: '0.7rem', color: 'var(--color-text-muted)', fontFamily: 'var(--font-mono)' }}>MISSED CONTACTS</div>
+                <div style={{ fontSize: '1.1rem', fontWeight: 700, color: scenario.targets.length - classifiedTargetIds.size > 0 ? 'var(--color-error-red)' : 'var(--color-text-muted)', marginTop: '2px' }}>
+                  {Math.max(0, scenario.targets.length - classifiedTargetIds.size)}
+                </div>
+              </div>
+            </div>
+
+            {/* Target Breakdown Pills */}
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', marginBottom: '24px', textAlign: 'left' }}>
+              {scenario.targets.map((tgt) => {
+                const wasClassified = classifiedTargetIds.has(tgt.id);
+                return (
+                  <div
+                    key={tgt.id}
+                    style={{
+                      display: 'flex',
+                      justifyContent: 'space-between',
+                      alignItems: 'center',
+                      padding: '8px 12px',
+                      borderRadius: '4px',
+                      background: 'rgba(12, 20, 23, 0.6)',
+                      border: `1px solid ${wasClassified ? 'rgba(92, 214, 143, 0.3)' : 'rgba(217, 108, 108, 0.3)'}`,
+                      fontSize: '0.8rem'
+                    }}
+                  >
+                    <span style={{ fontFamily: 'var(--font-mono)', fontWeight: 600 }}>
+                      {tgt.callsign} <span style={{ color: 'var(--color-text-muted)', fontSize: '0.72rem' }}>({tgt.flightProfile.replace('_', ' ')})</span>
+                    </span>
+                    <span style={{ fontFamily: 'var(--font-mono)', fontSize: '0.75rem', fontWeight: 700, color: wasClassified ? 'var(--color-success-green)' : 'var(--color-error-red)' }}>
+                      {wasClassified ? '✓ CLASSIFIED' : 'MISSED (DEPARTED AIRSPACE)'}
+                    </span>
+                  </div>
+                );
+              })}
+            </div>
+
+            {/* Deliberate Trainee Progression Action */}
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+              <button
+                onClick={() => scenarioEngineRef.current && handleCompleteSession(scenarioEngineRef.current)}
+                className="tactical-btn tactical-btn-primary"
+                style={{ padding: '12px', fontSize: '0.88rem' }}
+              >
+                PROCEED TO AFTER-ACTION RESULTS →
+              </button>
+              <div style={{ display: 'flex', gap: '10px' }}>
+                <button
+                  onClick={handleRestart}
+                  className="tactical-btn"
+                  style={{ flex: 1, padding: '10px', fontSize: '0.8rem' }}
+                >
+                  <RotateCcw size={15} /> RESTART SCENARIO
+                </button>
+                <button
+                  onClick={onAbortToMenu}
+                  className="tactical-btn tactical-btn-danger"
+                  style={{ flex: 1, padding: '10px', fontSize: '0.8rem' }}
+                >
+                  <LogOut size={15} /> ABORT TO MENU
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Target Screen Markers */}
       {activeLocks.map((lock) => {
-        if (lock.screenX < 0 || lock.screenX > window.innerWidth || lock.screenY < 0 || lock.screenY > window.innerHeight) {
+        const screenW = containerRef.current?.clientWidth || window.innerWidth;
+        const screenH = containerRef.current?.clientHeight || window.innerHeight;
+        if (lock.screenX < 0 || lock.screenX > screenW || lock.screenY < 0 || lock.screenY > screenH) {
           return null;
         }
 
         const isClassified = classifiedTargetIds.has(lock.targetId);
+        const targetDef = scenario.targets.find((t) => t.id === lock.targetId);
+        const remainingLifetimeSec = targetDef ? targetDef.despawnTimeSec - elapsedSec : 999;
+        const isExpiringSoon = !isClassified && remainingLifetimeSec <= 6 && remainingLifetimeSec > 0;
 
         return (
           <div
@@ -390,75 +625,113 @@ export const SimulationScreen: React.FC<SimulationScreenProps> = ({
               top: `${lock.screenY}px`,
               transform: 'translate(-50%, -50%)',
               pointerEvents: 'auto',
-              cursor: 'pointer',
+              cursor: isClassified ? 'default' : 'pointer',
               zIndex: 25
             }}
-            onClick={() => triggerClassification(lock)}
+            onClick={() => {
+              if (!isClassified && !isDebriefOpen) triggerClassification(lock);
+            }}
           >
             <div
               style={{
-                width: '32px',
-                height: '32px',
-                border: isClassified
-                  ? '1px dashed var(--color-success-green)'
-                  : lock.isLocked
-                  ? '2px solid var(--color-accent-mint)'
-                  : '1px solid rgba(230, 182, 92, 0.6)',
-                borderRadius: '4px',
                 display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                background: 'rgba(12, 20, 23, 0.2)'
+                flexDirection: 'column',
+                alignItems: 'center'
               }}
             >
-              <span
+              <div
                 style={{
-                  fontFamily: 'var(--font-mono)',
-                  fontSize: '0.65rem',
-                  color: isClassified
-                    ? 'var(--color-success-green)'
+                  width: '36px',
+                  height: '36px',
+                  border: isClassified
+                    ? '1.5px dashed var(--color-success-green)'
                     : lock.isLocked
-                    ? 'var(--color-accent-mint)'
-                    : 'var(--color-warning-amber)',
-                  fontWeight: 700
+                    ? '2px solid var(--color-accent-mint)'
+                    : isExpiringSoon
+                    ? '2px solid var(--color-warning-amber)'
+                    : '1px solid rgba(230, 182, 92, 0.75)',
+                  borderRadius: '4px',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  background: lock.isLocked ? 'rgba(141, 217, 192, 0.12)' : 'rgba(12, 20, 23, 0.35)',
+                  boxShadow: isExpiringSoon ? '0 0 16px rgba(230, 182, 92, 0.6)' : lock.isLocked ? '0 0 14px rgba(141, 217, 192, 0.5)' : 'none',
+                  transition: 'all 0.15s ease'
                 }}
               >
-                {lock.callsign.substring(0, 3)}
-              </span>
+                <div
+                  style={{
+                    width: '4px',
+                    height: '4px',
+                    borderRadius: '50%',
+                    background: isClassified ? 'var(--color-success-green)' : lock.isLocked ? 'var(--color-accent-mint)' : isExpiringSoon ? 'var(--color-warning-amber)' : 'var(--color-warning-amber)'
+                  }}
+                />
+              </div>
+
+              {/* Callsign & Range Label Badge */}
+              <div
+                style={{
+                  marginTop: '4px',
+                  fontFamily: 'var(--font-mono)',
+                  fontSize: '0.66rem',
+                  padding: '2px 6px',
+                  borderRadius: '3px',
+                  background: 'rgba(10, 16, 19, 0.85)',
+                  border: `1px solid ${isClassified ? 'rgba(92, 214, 143, 0.4)' : lock.isLocked ? 'rgba(141, 217, 192, 0.6)' : isExpiringSoon ? 'rgba(230, 182, 92, 0.7)' : 'rgba(230, 182, 92, 0.35)'}`,
+                  color: isClassified ? 'var(--color-success-green)' : lock.isLocked ? 'var(--color-accent-mint)' : isExpiringSoon ? 'var(--color-warning-amber)' : 'var(--color-text-secondary)',
+                  whiteSpace: 'nowrap',
+                  backdropFilter: 'blur(4px)',
+                  textAlign: 'center'
+                }}
+              >
+                <div>{lock.callsign} <strong style={{ color: '#ffffff' }}>[{lock.distanceMeters}m]</strong></div>
+                {isExpiringSoon && (
+                  <div style={{ color: 'var(--color-warning-amber)', fontSize: '0.6rem', fontWeight: 700 }}>
+                    ⚠️ EXITING: {Math.ceil(remainingLifetimeSec)}s
+                  </div>
+                )}
+              </div>
             </div>
           </div>
         );
       })}
 
-      {/* Top HUD Bar */}
+      {/* Top HUD Telemetry & Compass Layout */}
       <div
+        className="simulation-hud-top-bar"
         style={{
           position: 'absolute',
-          top: '16px',
-          left: '20px',
-          right: '20px',
-          display: 'flex',
-          justifyContent: 'space-between',
-          alignItems: 'flex-start',
+          top: '12px',
+          left: '16px',
+          right: '16px',
           pointerEvents: 'none',
           zIndex: 40
         }}
       >
         {/* Mission Telemetry Card */}
-        <div className="tactical-panel" style={{ padding: '12px 18px', minWidth: '240px', pointerEvents: 'auto' }}>
+        <div
+          className="tactical-panel simulation-hud-telemetry"
+          style={{
+            padding: '12px 16px',
+            width: 'min(280px, calc(100vw - 32px))',
+            maxWidth: '280px',
+            pointerEvents: 'auto'
+          }}
+        >
           <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '4px' }}>
             <span className="tactical-header-tag">{scenario.codename}</span>
             <span style={{ fontSize: '0.65rem', padding: '1px 6px', borderRadius: '3px', background: 'rgba(141,217,192,0.15)', color: 'var(--color-accent-mint)', fontFamily: 'var(--font-mono)' }}>
               {scenario.difficulty.toUpperCase()}
             </span>
           </div>
-          <div style={{ fontSize: '0.9rem', fontWeight: 700, color: 'var(--color-text-primary)' }}>
+          <div style={{ fontSize: '0.88rem', fontWeight: 700, color: 'var(--color-text-primary)' }}>
             {scenario.name}
           </div>
 
           {/* Time & Progress */}
           <div style={{ marginTop: '8px' }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', fontFamily: 'var(--font-mono)', fontSize: '0.75rem', color: 'var(--color-text-secondary)', marginBottom: '4px' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', fontFamily: 'var(--font-mono)', fontSize: '0.72rem', color: 'var(--color-text-secondary)', marginBottom: '4px' }}>
               <span>MISSION TIME</span>
               <span>{Math.floor(elapsedSec)}s / {scenario.durationSeconds}s</span>
             </div>
@@ -467,7 +740,7 @@ export const SimulationScreen: React.FC<SimulationScreenProps> = ({
             </div>
           </div>
 
-          <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: '8px', fontFamily: 'var(--font-mono)', fontSize: '0.75rem', color: 'var(--color-text-muted)' }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: '8px', fontFamily: 'var(--font-mono)', fontSize: '0.72rem', color: 'var(--color-text-muted)' }}>
             <span>CLASSIFIED:</span>
             <span style={{ color: 'var(--color-accent-mint)', fontWeight: 700 }}>
               {classifiedTargetIds.size} / {scenario.targets.length} CONTACTS
@@ -483,6 +756,10 @@ export const SimulationScreen: React.FC<SimulationScreenProps> = ({
               <div style={{ display: 'flex', flexDirection: 'column', gap: '5px' }}>
                 {activeLocks.map((lock) => {
                   const isClassified = classifiedTargetIds.has(lock.targetId);
+                  const targetDef = scenario.targets.find((t) => t.id === lock.targetId);
+                  const remainingSec = targetDef ? targetDef.despawnTimeSec - elapsedSec : 999;
+                  const isExpiringSoon = !isClassified && remainingSec <= 6 && remainingSec > 0;
+
                   return (
                     <div
                       key={lock.targetId}
@@ -494,7 +771,7 @@ export const SimulationScreen: React.FC<SimulationScreenProps> = ({
                         background: 'rgba(12, 20, 23, 0.6)',
                         padding: '4px 8px',
                         borderRadius: '3px',
-                        border: '1px solid rgba(141, 217, 192, 0.1)'
+                        border: isExpiringSoon ? '1px solid rgba(230, 182, 92, 0.5)' : '1px solid rgba(141, 217, 192, 0.1)'
                       }}
                     >
                       <span style={{ fontFamily: 'var(--font-mono)', color: 'var(--color-text-primary)' }}>
@@ -505,18 +782,25 @@ export const SimulationScreen: React.FC<SimulationScreenProps> = ({
                           ✓ CLASSIFIED
                         </span>
                       ) : (
-                        <button
-                          onClick={() => triggerClassification(lock)}
-                          className="tactical-btn"
-                          style={{
-                            padding: '3px 8px',
-                            fontSize: '0.68rem',
-                            borderColor: 'var(--color-accent-mint)',
-                            color: 'var(--color-accent-mint)'
-                          }}
-                        >
-                          CLASSIFY
-                        </button>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+                          {isExpiringSoon && (
+                            <span style={{ color: 'var(--color-warning-amber)', fontFamily: 'var(--font-mono)', fontSize: '0.62rem', fontWeight: 700 }}>
+                              {Math.ceil(remainingSec)}s
+                            </span>
+                          )}
+                          <button
+                            onClick={() => triggerClassification(lock)}
+                            className="tactical-btn"
+                            style={{
+                              padding: '2px 7px',
+                              fontSize: '0.68rem',
+                              borderColor: isExpiringSoon ? 'var(--color-warning-amber)' : 'var(--color-accent-mint)',
+                              color: isExpiringSoon ? 'var(--color-warning-amber)' : 'var(--color-accent-mint)'
+                            }}
+                          >
+                            CLASSIFY
+                          </button>
+                        </div>
                       )}
                     </div>
                   );
@@ -527,10 +811,12 @@ export const SimulationScreen: React.FC<SimulationScreenProps> = ({
         </div>
 
         {/* Center Compass Tape */}
-        <CompassTape bearingDeg={bearingDeg} pitchDeg={pitchDeg} />
+        <div className="simulation-hud-compass" style={{ pointerEvents: 'none', transform: 'scale(0.95)' }}>
+          <CompassTape bearingDeg={bearingDeg} pitchDeg={pitchDeg} />
+        </div>
 
         {/* Quick Tactical Controls */}
-        <div style={{ display: 'flex', gap: '8px', pointerEvents: 'auto' }}>
+        <div className="simulation-hud-controls" style={{ display: 'flex', gap: '8px', pointerEvents: 'auto' }}>
           <button
             onClick={() => cameraControllerRef.current?.setZoom(!isZoomed)}
             className="tactical-btn"
@@ -561,6 +847,7 @@ export const SimulationScreen: React.FC<SimulationScreenProps> = ({
 
       {/* Non-Operational Safety Disclaimer Watermark */}
       <div
+        className="hud-disclaimer-watermark"
         style={{
           position: 'absolute',
           bottom: '12px',
@@ -576,8 +863,9 @@ export const SimulationScreen: React.FC<SimulationScreenProps> = ({
         TRAINING SIMULATION ONLY - NO OPERATIONAL WEAPON CONTROL
       </div>
 
-      {/* Controls Hint Overlay at bottom left */}
+      {/* Controls Hint Overlay at bottom left (responsive display) */}
       <div
+        className="hud-controls-hint"
         style={{
           position: 'absolute',
           bottom: '12px',
@@ -595,10 +883,10 @@ export const SimulationScreen: React.FC<SimulationScreenProps> = ({
           zIndex: 35
         }}
       >
-        <span>[WASD] Move Post</span>
+        <span>[{formatKeyDisplay(inputManager.getBinding('moveForward'))}{formatKeyDisplay(inputManager.getBinding('moveLeft'))}{formatKeyDisplay(inputManager.getBinding('moveBackward'))}{formatKeyDisplay(inputManager.getBinding('moveRight'))}] Move Post</span>
         <span>[MOUSE] Pan Camera</span>
-        <span>[RMB / SHIFT] Binoculars</span>
-        <span>[SPACE] Classify Lock</span>
+        <span>[{formatKeyDisplay(inputManager.getBinding('toggleZoom'))}] Binoculars</span>
+        <span>[{formatKeyDisplay(inputManager.getBinding('triggerClassification'))}] Classify Lock</span>
       </div>
 
       {/* Target Classification Drawer */}
@@ -621,16 +909,45 @@ export const SimulationScreen: React.FC<SimulationScreenProps> = ({
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'center',
-            zIndex: 100
+            zIndex: 100,
+            padding: '16px'
           }}
         >
-          <div className="tactical-panel" style={{ width: '420px', padding: '32px' }}>
-            <div style={{ textAlign: 'center', marginBottom: '24px' }}>
+          <div className="tactical-panel" style={{ width: 'min(92vw, 420px)', padding: 'clamp(20px, 4vw, 32px)' }}>
+            <div style={{ textAlign: 'center', marginBottom: '20px' }}>
               <div className="tactical-header-tag">SIMULATION SUSPENDED</div>
               <h2 style={{ fontSize: '1.4rem', fontWeight: 700, marginTop: '6px' }}>PAUSE MENU</h2>
               <p style={{ fontSize: '0.82rem', color: 'var(--color-text-secondary)', marginTop: '4px' }}>
                 Simulation clock and target physics are frozen.
               </p>
+            </div>
+
+            {/* Live Mouse Sensitivity Calibration */}
+            <div style={{ marginBottom: '18px', padding: '12px 14px', background: 'rgba(12, 20, 23, 0.7)', borderRadius: '6px', border: '1px solid var(--color-border-subtle)', textAlign: 'left' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.78rem', color: 'var(--color-text-secondary)', marginBottom: '8px', fontFamily: 'var(--font-mono)' }}>
+                <span>AIM SENSITIVITY:</span>
+                <span style={{ color: 'var(--color-accent-mint)', fontWeight: 700 }}>{currentSensitivity.toFixed(2)}x</span>
+              </div>
+              <input
+                type="range"
+                min="0.1"
+                max="3.0"
+                step="0.05"
+                value={currentSensitivity}
+                onChange={(e) => {
+                  const val = Number(e.target.value);
+                  setCurrentSensitivity(val);
+                  const updated = { ...settings, mouseSensitivity: val };
+                  cameraControllerRef.current?.updateSettings(updated);
+                  storage.saveSettings(updated).catch(() => {});
+                }}
+                style={{ width: '100%', accentColor: 'var(--color-accent-mint)', cursor: 'pointer' }}
+              />
+              <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.65rem', color: 'var(--color-text-muted)', marginTop: '4px', fontFamily: 'var(--font-mono)' }}>
+                <span>0.1x (Fine)</span>
+                <span>1.0x (Calibrated)</span>
+                <span>3.0x (Fast)</span>
+              </div>
             </div>
 
             <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>

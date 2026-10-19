@@ -50,7 +50,8 @@ export const CompassTape: React.FC<CompassTapeProps> = ({ bearingDeg, pitchDeg }
       {/* Compass Bar Window */}
       <div style={{
         position: 'relative',
-        width: '320px',
+        width: 'min(320px, 45vw)',
+        minWidth: '180px',
         height: '40px',
         overflow: 'hidden',
         background: 'linear-gradient(90deg, rgba(12,20,23,0) 0%, rgba(27,43,48,0.7) 30%, rgba(27,43,48,0.7) 70%, rgba(12,20,23,0) 100%)',

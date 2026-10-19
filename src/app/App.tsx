@@ -18,6 +18,7 @@ import { ResultsScreen } from '../features/results/ResultsScreen';
 import { AARDashboardScreen } from '../features/aar/AARDashboardScreen';
 import { SessionHistoryScreen } from '../features/history/SessionHistoryScreen';
 import { SettingsScreen } from '../features/settings/SettingsScreen';
+import { inputManager } from '../services/inputManager';
 
 type AppView =
   | 'welcome'
@@ -34,6 +35,7 @@ export const App: React.FC = () => {
   const [currentView, setCurrentView] = useState<AppView>('welcome');
   const [selectedScenario, setSelectedScenario] = useState<ScenarioDefinition>(SCENARIOS[0]);
   const [settings, setSettings] = useState<UserSettings>(DEFAULT_SETTINGS);
+  const [aarReturnView, setAarReturnView] = useState<'results' | 'history'>('results');
 
   // Active session and score for results & AAR
   const [lastSession, setLastSession] = useState<TrainingSession | null>(null);
@@ -46,6 +48,9 @@ export const App: React.FC = () => {
       await storage.init();
       const savedSettings = await storage.getSettings();
       setSettings(savedSettings);
+      if (savedSettings.keyBindings) {
+        inputManager.setAllBindings(savedSettings.keyBindings);
+      }
     };
     init();
   }, []);
@@ -73,11 +78,12 @@ export const App: React.FC = () => {
     // Locate matching scenario if available
     const matched = SCENARIOS.find((s) => s.id === session.scenarioId) || SCENARIOS[0];
     setSelectedScenario(matched);
+    setAarReturnView('history');
     setCurrentView('aar');
   };
 
   return (
-    <div style={{ width: '100vw', height: '100vh', position: 'relative', overflow: 'hidden' }}>
+    <div style={{ width: '100%', height: '100dvh', position: 'relative', overflow: 'hidden' }}>
       {currentView === 'welcome' && (
         <WelcomeScreen
           onEnter={() => setCurrentView('menu')}
@@ -128,7 +134,10 @@ export const App: React.FC = () => {
           session={lastSession}
           score={lastScore}
           scenario={selectedScenario}
-          onOpenAAR={() => setCurrentView('aar')}
+          onOpenAAR={() => {
+            setAarReturnView('results');
+            setCurrentView('aar');
+          }}
           onRetry={() => setCurrentView('simulation')}
           onMainMenu={() => setCurrentView('menu')}
         />
@@ -140,8 +149,9 @@ export const App: React.FC = () => {
           score={lastScore}
           events={lastEvents}
           scenario={selectedScenario}
-          onBack={() => setCurrentView('results')}
+          onBack={() => setCurrentView(aarReturnView)}
           onMainMenu={() => setCurrentView('menu')}
+          backButtonLabel={aarReturnView === 'history' ? 'BACK TO HISTORY' : 'BACK TO RESULTS'}
         />
       )}
 
@@ -155,7 +165,12 @@ export const App: React.FC = () => {
       {currentView === 'settings' && (
         <SettingsScreen
           currentSettings={settings}
-          onUpdateSettings={(newSettings) => setSettings(newSettings)}
+          onUpdateSettings={(newSettings) => {
+            setSettings(newSettings);
+            if (newSettings.keyBindings) {
+              inputManager.setAllBindings(newSettings.keyBindings);
+            }
+          }}
           onBack={() => setCurrentView('menu')}
         />
       )}

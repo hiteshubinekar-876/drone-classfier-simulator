@@ -164,6 +164,41 @@ export interface TrainingScore {
 
 export type GraphicsPreset = 'low' | 'medium' | 'high';
 
+export type KeyAction =
+  | 'moveForward'
+  | 'moveBackward'
+  | 'moveLeft'
+  | 'moveRight'
+  | 'toggleZoom'
+  | 'triggerClassification'
+  | 'selectArchetype1'
+  | 'selectArchetype2'
+  | 'selectArchetype3'
+  | 'selectArchetype4'
+  | 'submitClassification'
+  | 'cancelDrawer'
+  | 'pauseSimulation'
+  | 'toggleMute';
+
+export type KeyBindings = Record<KeyAction, string>;
+
+export const DEFAULT_KEY_BINDINGS: KeyBindings = {
+  moveForward: 'KeyW',
+  moveBackward: 'KeyS',
+  moveLeft: 'KeyA',
+  moveRight: 'KeyD',
+  toggleZoom: 'ShiftLeft',
+  triggerClassification: 'Space',
+  selectArchetype1: 'Digit1',
+  selectArchetype2: 'Digit2',
+  selectArchetype3: 'Digit3',
+  selectArchetype4: 'Digit4',
+  submitClassification: 'Enter',
+  cancelDrawer: 'Escape',
+  pauseSimulation: 'Escape',
+  toggleMute: 'KeyM'
+};
+
 export interface UserSettings {
   graphicsPreset: GraphicsPreset;
   resolutionScale: number; // 0.75, 1.0, 1.25
@@ -172,9 +207,11 @@ export interface UserSettings {
   masterVolume: number;    // 0.0 - 1.0
   ambientVolume: number;
   sfxVolume: number;
-  mouseSensitivity: number; // 0.2 - 3.0
+  mouseSensitivity: number; // 0.1 - 3.0
   invertY: boolean;
   reducedMotion: boolean;
+  targetObservationPacing: 'standard' | 'extended' | 'relaxed';
+  keyBindings: KeyBindings;
 }
 
 export const DEFAULT_SETTINGS: UserSettings = {
@@ -187,5 +224,9 @@ export const DEFAULT_SETTINGS: UserSettings = {
   sfxVolume: 0.9,
   mouseSensitivity: 1.0,
   invertY: false,
-  reducedMotion: false
+  reducedMotion: false,
+  targetObservationPacing: 'standard',
+  keyBindings: { ...DEFAULT_KEY_BINDINGS }
 };
+
+export * from './aarInsights';

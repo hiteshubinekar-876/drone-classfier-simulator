@@ -170,8 +170,15 @@ async function runBrowserVerification() {
     await page.screenshot({ path: path.join(screenshotsDir, '08_simulation_in_progress.png') });
 
     // Progress through simulation and classify remaining contacts
-    console.log('Monitoring simulation progress and classifying remaining aerial contacts...');
-    for (let sec = 0; sec < 40; sec++) {
+    for (let sec = 0; sec < 75; sec++) {
+      const debriefBtn = await page.$('button:has-text("PROCEED TO AFTER-ACTION RESULTS")');
+      if (debriefBtn) {
+        console.log('✓ Debrief modal displayed! Confirming progression to After-Action Results...');
+        await page.screenshot({ path: path.join(screenshotsDir, '08b_exercise_debrief_modal.png') });
+        await debriefBtn.click();
+        await page.waitForTimeout(600);
+      }
+
       const resultsHeader = await page.$('text=MISSION RESULTS');
       if (resultsHeader) {
         console.log('Mission complete, results rendered.');

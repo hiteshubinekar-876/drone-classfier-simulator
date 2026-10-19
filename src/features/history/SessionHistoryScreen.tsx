@@ -71,8 +71,8 @@ export const SessionHistoryScreen: React.FC<SessionHistoryScreenProps> = ({
   return (
     <div
       style={{
-        width: '100vw',
-        height: '100vh',
+        width: '100%',
+        height: '100dvh',
         display: 'flex',
         flexDirection: 'column',
         background: 'linear-gradient(135deg, #0c1417 0%, #131f24 50%, #070c0e 100%)',
@@ -82,12 +82,14 @@ export const SessionHistoryScreen: React.FC<SessionHistoryScreenProps> = ({
       {/* Top Header */}
       <header
         style={{
-          height: '64px',
+          minHeight: '64px',
           borderBottom: '1px solid var(--color-border-subtle)',
-          padding: '0 32px',
+          padding: '12px clamp(16px, 3vw, 32px)',
           display: 'flex',
           alignItems: 'center',
           justifyContent: 'space-between',
+          flexWrap: 'wrap',
+          gap: '12px',
           background: 'rgba(15, 24, 28, 0.85)',
           backdropFilter: 'blur(10px)',
           zIndex: 20
@@ -119,7 +121,7 @@ export const SessionHistoryScreen: React.FC<SessionHistoryScreenProps> = ({
       </header>
 
       {/* Main Table Content */}
-      <div style={{ flex: 1, padding: '36px 48px', overflowY: 'auto' }}>
+      <div style={{ flex: 1, padding: 'clamp(20px, 3vw, 40px)', overflowY: 'auto' }}>
         {isLoading ? (
           <div style={{ textAlign: 'center', color: 'var(--color-text-muted)', marginTop: '80px', fontFamily: 'var(--font-mono)' }}>
             LOADING INDEXEDDB SESSIONS...
@@ -134,17 +136,18 @@ export const SessionHistoryScreen: React.FC<SessionHistoryScreenProps> = ({
           </div>
         ) : (
           <div className="tactical-panel" style={{ padding: '24px' }}>
-            <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.82rem' }}>
-              <thead>
-                <tr style={{ borderBottom: '1px solid var(--color-border-subtle)', textAlign: 'left', color: 'var(--color-text-muted)', fontFamily: 'var(--font-mono)' }}>
-                  <th style={{ padding: '12px' }}>DATE / TIME</th>
-                  <th style={{ padding: '12px' }}>SCENARIO</th>
-                  <th style={{ padding: '12px' }}>DIFFICULTY</th>
-                  <th style={{ padding: '12px' }}>STATUS</th>
-                  <th style={{ padding: '12px' }}>SCORE</th>
-                  <th style={{ padding: '12px', textAlign: 'right' }}>ACTIONS</th>
-                </tr>
-              </thead>
+            <div style={{ overflowX: 'auto', width: '100%' }}>
+              <table style={{ width: '100%', minWidth: '600px', borderCollapse: 'collapse', fontSize: '0.82rem' }}>
+                <thead>
+                  <tr style={{ borderBottom: '1px solid var(--color-border-subtle)', textAlign: 'left', color: 'var(--color-text-muted)', fontFamily: 'var(--font-mono)' }}>
+                    <th style={{ padding: '12px' }}>DATE / TIME</th>
+                    <th style={{ padding: '12px' }}>SCENARIO</th>
+                    <th style={{ padding: '12px' }}>DIFFICULTY</th>
+                    <th style={{ padding: '12px' }}>STATUS</th>
+                    <th style={{ padding: '12px' }}>SCORE</th>
+                    <th style={{ padding: '12px', textAlign: 'right' }}>ACTIONS</th>
+                  </tr>
+                </thead>
               <tbody>
                 {sessions.map((sess) => {
                   const score = scores.get(sess.id);
@@ -208,6 +211,7 @@ export const SessionHistoryScreen: React.FC<SessionHistoryScreenProps> = ({
                 })}
               </tbody>
             </table>
+            </div>
           </div>
         )}
       </div>

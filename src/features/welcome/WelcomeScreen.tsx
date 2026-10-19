@@ -23,13 +23,15 @@ export const WelcomeScreen: React.FC<WelcomeScreenProps> = ({ onEnter, onQuickSt
     <div
       style={{
         position: 'relative',
-        width: '100vw',
-        height: '100vh',
+        width: '100%',
+        minHeight: '100dvh',
         display: 'flex',
         alignItems: 'center',
         justifyContent: 'center',
         background: 'radial-gradient(ellipse at 50% 30%, #172b33 0%, #0c1417 75%, #070c0e 100%)',
-        overflow: 'hidden'
+        overflowY: 'auto',
+        overflowX: 'hidden',
+        padding: 'clamp(16px, 3vw, 40px)'
       }}
     >
       {/* Background Decorative Radar Grid */}
@@ -54,11 +56,12 @@ export const WelcomeScreen: React.FC<WelcomeScreenProps> = ({ onEnter, onQuickSt
       <div
         className="tactical-panel"
         style={{
-          width: 'min(92vw, 760px)',
-          padding: '40px 48px',
+          width: 'min(94vw, 760px)',
+          padding: 'clamp(24px, 4vw, 48px)',
           zIndex: 10,
           position: 'relative',
-          boxShadow: '0 24px 64px rgba(0,0,0,0.7)'
+          boxShadow: '0 24px 64px rgba(0,0,0,0.7)',
+          margin: 'auto'
         }}
       >
         {/* Top Header Tag */}

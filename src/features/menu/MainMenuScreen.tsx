@@ -61,8 +61,8 @@ export const MainMenuScreen: React.FC<MainMenuScreenProps> = ({
     <div
       style={{
         position: 'relative',
-        width: '100vw',
-        height: '100vh',
+        width: '100%',
+        height: '100dvh',
         display: 'flex',
         flexDirection: 'column',
         background: 'linear-gradient(135deg, #0c1417 0%, #131f24 50%, #091013 100%)',
@@ -72,12 +72,14 @@ export const MainMenuScreen: React.FC<MainMenuScreenProps> = ({
       {/* Top Tactical Command Header */}
       <header
         style={{
-          height: '64px',
+          minHeight: '64px',
           borderBottom: '1px solid var(--color-border-subtle)',
-          padding: '0 32px',
+          padding: '12px clamp(16px, 3vw, 32px)',
           display: 'flex',
           alignItems: 'center',
           justifyContent: 'space-between',
+          flexWrap: 'wrap',
+          gap: '12px',
           background: 'rgba(15, 24, 28, 0.8)',
           backdropFilter: 'blur(10px)',
           zIndex: 20
@@ -110,9 +112,9 @@ export const MainMenuScreen: React.FC<MainMenuScreenProps> = ({
         style={{
           flex: 1,
           display: 'grid',
-          gridTemplateColumns: 'minmax(320px, 460px) 1fr',
-          gap: '32px',
-          padding: '40px 48px',
+          gridTemplateColumns: 'repeat(auto-fit, minmax(min(100%, 340px), 1fr))',
+          gap: '24px',
+          padding: 'clamp(20px, 3vw, 40px)',
           overflowY: 'auto',
           zIndex: 10
         }}
@@ -260,7 +262,7 @@ export const MainMenuScreen: React.FC<MainMenuScreenProps> = ({
               This simulator trains air defense observers and security personnel on early visual acquisition and correct classification of asymmetric aerial threats. Trainees learn to spot visual tells such as rotor configurations, delta-wing trajectories, and commercial toy decoys under varied atmospheric conditions.
             </p>
 
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '12px', marginTop: 'auto' }}>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(min(100%, 180px), 1fr))', gap: '12px', marginTop: 'auto' }}>
               <div style={{ background: 'rgba(15, 24, 28, 0.6)', padding: '12px', borderRadius: '4px', border: '1px solid var(--color-border-subtle)' }}>
                 <div style={{ fontFamily: 'var(--font-mono)', fontSize: '0.75rem', color: 'var(--color-accent-mint)', fontWeight: 700 }}>
                   01 // DETECTION SPEED
@@ -312,7 +314,7 @@ export const MainMenuScreen: React.FC<MainMenuScreenProps> = ({
               </button>
             </div>
 
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(340px, 1fr))', gap: '16px' }}>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(min(100%, 300px), 1fr))', gap: '16px' }}>
               {Object.values(THREAT_CATALOG).map((item) => (
                 <div
                   key={item.id}

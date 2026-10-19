@@ -20,11 +20,35 @@ export class ScenarioEngine {
   private despawnedTargetIds: Set<string> = new Set();
   private events: SimulationEvent[] = [];
   private eventSequence: number = 0;
+  public pacingMultiplier: number = 1.0;
 
-  constructor(scenario: ScenarioDefinition, sessionId: string, scene: THREE.Scene) {
-    this.scenario = scenario;
+  constructor(
+    scenario: ScenarioDefinition,
+    sessionId: string,
+    scene: THREE.Scene,
+    pacingMultiplier: number = 1.0
+  ) {
     this.sessionId = sessionId;
     this.scene = scene;
+    this.pacingMultiplier = Math.max(0.5, Math.min(3.0, pacingMultiplier));
+
+    if (this.pacingMultiplier !== 1.0) {
+      this.scenario = {
+        ...scenario,
+        durationSeconds: Math.round(scenario.durationSeconds * this.pacingMultiplier),
+        targets: scenario.targets.map((tgt) => ({
+          ...tgt,
+          spawnTimeSec: Math.round(tgt.spawnTimeSec * this.pacingMultiplier * 10) / 10,
+          despawnTimeSec: Math.round(tgt.despawnTimeSec * this.pacingMultiplier * 10) / 10,
+          waypoints: tgt.waypoints.map((wp) => ({
+            ...wp,
+            timeSec: Math.round(wp.timeSec * this.pacingMultiplier * 10) / 10
+          }))
+        }))
+      };
+    } else {
+      this.scenario = scenario;
+    }
   }
 
   start(): void {
@@ -165,7 +189,20 @@ export class ScenarioEngine {
     if (forwardVec.lengthSq() > 0.0001) {
       forwardVec.normalize();
       const targetQuat = new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0, 0, -1), forwardVec);
-      entity.group.quaternion.slerp(targetQuat, 0.1);
+
+      // Compute banking roll into turns
+      const currentEuler = new THREE.Euler().setFromQuaternion(entity.group.quaternion, 'YXZ');
+      const targetEuler = new THREE.Euler().setFromQuaternion(targetQuat, 'YXZ');
+      let yawDelta = targetEuler.y - currentEuler.y;
+      while (yawDelta > Math.PI) yawDelta -= Math.PI * 2;
+      while (yawDelta < -Math.PI) yawDelta += Math.PI * 2;
+
+      // Realistic bank angle (up to ~24 degrees)
+      const bankAngle = Math.max(-0.42, Math.min(0.42, yawDelta * 2.2));
+      const bankQuat = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 0, 1), bankAngle);
+      targetQuat.multiply(bankQuat);
+
+      entity.group.quaternion.slerp(targetQuat, 0.12);
     }
   }
 

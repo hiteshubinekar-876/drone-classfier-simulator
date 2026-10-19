@@ -4,12 +4,14 @@ import {
   TrainingSession,
   SimulationEvent,
   ScenarioDefinition,
-  THREAT_CATALOG
+  THREAT_CATALOG,
+  AarInsightReport
 } from '../../types';
 import {
   ArrowLeft,
   Download
 } from 'lucide-react';
+import { AiAarAssistantPanel } from './AiAarAssistantPanel';
 
 interface AARDashboardScreenProps {
   session: TrainingSession;
@@ -18,6 +20,7 @@ interface AARDashboardScreenProps {
   scenario: ScenarioDefinition;
   onBack: () => void;
   onMainMenu: () => void;
+  backButtonLabel?: string;
 }
 
 export const AARDashboardScreen: React.FC<AARDashboardScreenProps> = ({
@@ -26,9 +29,11 @@ export const AARDashboardScreen: React.FC<AARDashboardScreenProps> = ({
   events,
   scenario,
   onBack,
-  onMainMenu
+  onMainMenu,
+  backButtonLabel = 'BACK TO RESULTS'
 }) => {
   const [selectedEvent, setSelectedEvent] = useState<SimulationEvent | null>(events[0] || null);
+  const [aarReport, setAarReport] = useState<AarInsightReport | null>(null);
   const totalDuration = scenario.durationSeconds;
 
   const handleExportJson = () => {
@@ -41,7 +46,8 @@ export const AARDashboardScreen: React.FC<AARDashboardScreenProps> = ({
         difficulty: scenario.difficulty,
         targets: scenario.targets
       },
-      events
+      events,
+      aarReport
     };
 
     const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
@@ -71,8 +77,8 @@ export const AARDashboardScreen: React.FC<AARDashboardScreenProps> = ({
   return (
     <div
       style={{
-        width: '100vw',
-        height: '100vh',
+        width: '100%',
+        height: '100dvh',
         display: 'flex',
         flexDirection: 'column',
         background: 'linear-gradient(135deg, #0c1417 0%, #131f24 50%, #070c0e 100%)',
@@ -82,12 +88,14 @@ export const AARDashboardScreen: React.FC<AARDashboardScreenProps> = ({
       {/* Top Header */}
       <header
         style={{
-          height: '64px',
+          minHeight: '64px',
           borderBottom: '1px solid var(--color-border-subtle)',
-          padding: '0 32px',
+          padding: '12px clamp(16px, 3vw, 32px)',
           display: 'flex',
           alignItems: 'center',
           justifyContent: 'space-between',
+          flexWrap: 'wrap',
+          gap: '12px',
           background: 'rgba(15, 24, 28, 0.85)',
           backdropFilter: 'blur(10px)',
           zIndex: 20
@@ -99,7 +107,7 @@ export const AARDashboardScreen: React.FC<AARDashboardScreenProps> = ({
             className="tactical-btn"
             style={{ padding: '8px 14px', fontSize: '0.8rem' }}
           >
-            <ArrowLeft size={16} /> BACK TO RESULTS
+            <ArrowLeft size={16} /> {backButtonLabel}
           </button>
           <div>
             <div className="tactical-header-tag">AFTER-ACTION REVIEW (AAR) DASHBOARD</div>
@@ -109,7 +117,7 @@ export const AARDashboardScreen: React.FC<AARDashboardScreenProps> = ({
           </div>
         </div>
 
-        <div style={{ display: 'flex', gap: '10px' }}>
+        <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap' }}>
           <button
             onClick={handleExportJson}
             className="tactical-btn"
@@ -134,7 +142,7 @@ export const AARDashboardScreen: React.FC<AARDashboardScreenProps> = ({
           display: 'flex',
           flexDirection: 'column',
           gap: '24px',
-          padding: '28px 48px',
+          padding: 'clamp(20px, 3vw, 40px)',
           overflowY: 'auto'
         }}
       >
@@ -244,6 +252,8 @@ export const AARDashboardScreen: React.FC<AARDashboardScreenProps> = ({
                 borderRadius: '6px',
                 padding: '14px 20px',
                 display: 'flex',
+                flexWrap: 'wrap',
+                gap: '8px',
                 alignItems: 'center',
                 justifyContent: 'space-between',
                 fontSize: '0.82rem',
@@ -282,48 +292,59 @@ export const AARDashboardScreen: React.FC<AARDashboardScreenProps> = ({
           )}
         </div>
 
+        {/* Hybrid AI / Deterministic AAR Assistant Panel */}
+        <AiAarAssistantPanel
+          session={session}
+          score={score}
+          events={events}
+          scenario={scenario}
+          onReportLoaded={setAarReport}
+        />
+
         {/* Diagnostic Notes & Instructor Audit Table */}
-        <div style={{ display: 'grid', gridTemplateColumns: '1.2fr 1fr', gap: '24px' }}>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(min(100%, 340px), 1fr))', gap: '24px' }}>
           {/* Target Performance Table */}
           <div className="tactical-panel" style={{ padding: '24px' }}>
             <div className="tactical-header-tag" style={{ marginBottom: '14px' }}>
               GROUND TRUTH VS TRAINEE ACTION MATRIX
             </div>
 
-            <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.8rem' }}>
-              <thead>
-                <tr style={{ borderBottom: '1px solid var(--color-border-subtle)', textAlign: 'left', color: 'var(--color-text-muted)', fontFamily: 'var(--font-mono)' }}>
-                  <th style={{ padding: '8px' }}>TARGET</th>
-                  <th style={{ padding: '8px' }}>ACTUAL CLASS</th>
-                  <th style={{ padding: '8px' }}>REPORTED</th>
-                  <th style={{ padding: '8px' }}>LATENCY</th>
-                  <th style={{ padding: '8px' }}>POINTS</th>
-                </tr>
-              </thead>
-              <tbody>
-                {score.targetAssessments.map((t) => (
-                  <tr key={t.targetId} style={{ borderBottom: '1px solid rgba(141, 217, 192, 0.08)' }}>
-                    <td style={{ padding: '10px 8px', fontFamily: 'var(--font-mono)', fontWeight: 700, color: 'var(--color-accent-mint)' }}>
-                      {t.callsign}
-                    </td>
-                    <td style={{ padding: '10px 8px', color: 'var(--color-text-primary)' }}>
-                      {THREAT_CATALOG[t.expectedClass].displayName}
-                    </td>
-                    <td style={{ padding: '10px 8px' }}>
-                      <span style={{ color: t.isCorrect ? 'var(--color-success-green)' : 'var(--color-error-red)', fontWeight: 600 }}>
-                        {t.classifiedAs ? THREAT_CATALOG[t.classifiedAs].category : 'NO REPORT'}
-                      </span>
-                    </td>
-                    <td style={{ padding: '10px 8px', fontFamily: 'var(--font-mono)' }}>
-                      {t.detectionLatencySec !== null ? `${t.detectionLatencySec.toFixed(1)}s` : 'MISSED'}
-                    </td>
-                    <td style={{ padding: '10px 8px', fontFamily: 'var(--font-mono)', fontWeight: 700, color: 'var(--color-accent-mint)' }}>
-                      +{t.scoreContribution}
-                    </td>
+            <div style={{ overflowX: 'auto', width: '100%' }}>
+              <table style={{ width: '100%', minWidth: '420px', borderCollapse: 'collapse', fontSize: '0.8rem' }}>
+                <thead>
+                  <tr style={{ borderBottom: '1px solid var(--color-border-subtle)', textAlign: 'left', color: 'var(--color-text-muted)', fontFamily: 'var(--font-mono)' }}>
+                    <th style={{ padding: '8px' }}>TARGET</th>
+                    <th style={{ padding: '8px' }}>ACTUAL CLASS</th>
+                    <th style={{ padding: '8px' }}>REPORTED</th>
+                    <th style={{ padding: '8px' }}>LATENCY</th>
+                    <th style={{ padding: '8px' }}>POINTS</th>
                   </tr>
-                ))}
-              </tbody>
-            </table>
+                </thead>
+                <tbody>
+                  {score.targetAssessments.map((t) => (
+                    <tr key={t.targetId} style={{ borderBottom: '1px solid rgba(141, 217, 192, 0.08)' }}>
+                      <td style={{ padding: '10px 8px', fontFamily: 'var(--font-mono)', fontWeight: 700, color: 'var(--color-accent-mint)' }}>
+                        {t.callsign}
+                      </td>
+                      <td style={{ padding: '10px 8px', color: 'var(--color-text-primary)' }}>
+                        {THREAT_CATALOG[t.expectedClass].displayName}
+                      </td>
+                      <td style={{ padding: '10px 8px' }}>
+                        <span style={{ color: t.isCorrect ? 'var(--color-success-green)' : 'var(--color-error-red)', fontWeight: 600 }}>
+                          {t.classifiedAs ? THREAT_CATALOG[t.classifiedAs].category : 'NO REPORT'}
+                        </span>
+                      </td>
+                      <td style={{ padding: '10px 8px', fontFamily: 'var(--font-mono)' }}>
+                        {t.detectionLatencySec !== null ? `${t.detectionLatencySec.toFixed(1)}s` : 'MISSED'}
+                      </td>
+                      <td style={{ padding: '10px 8px', fontFamily: 'var(--font-mono)', fontWeight: 700, color: 'var(--color-accent-mint)' }}>
+                        +{t.scoreContribution}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
           </div>
 
           {/* AI / Instructor Diagnostic Notes */}

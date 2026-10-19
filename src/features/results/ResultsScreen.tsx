@@ -58,8 +58,8 @@ export const ResultsScreen: React.FC<ResultsScreenProps> = ({
   return (
     <div
       style={{
-        width: '100vw',
-        height: '100vh',
+        width: '100%',
+        height: '100dvh',
         display: 'flex',
         flexDirection: 'column',
         background: 'linear-gradient(135deg, #0c1417 0%, #131f24 50%, #070c0e 100%)',
@@ -69,12 +69,14 @@ export const ResultsScreen: React.FC<ResultsScreenProps> = ({
       {/* Top Header */}
       <header
         style={{
-          height: '64px',
+          minHeight: '64px',
           borderBottom: '1px solid var(--color-border-subtle)',
-          padding: '0 32px',
+          padding: '12px clamp(16px, 3vw, 32px)',
           display: 'flex',
           alignItems: 'center',
           justifyContent: 'space-between',
+          flexWrap: 'wrap',
+          gap: '12px',
           background: 'rgba(15, 24, 28, 0.85)',
           backdropFilter: 'blur(10px)',
           zIndex: 20
@@ -90,7 +92,7 @@ export const ResultsScreen: React.FC<ResultsScreenProps> = ({
           </div>
         </div>
 
-        <div style={{ display: 'flex', gap: '10px' }}>
+        <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap' }}>
           <button
             onClick={onRetry}
             className="tactical-btn"
@@ -113,9 +115,9 @@ export const ResultsScreen: React.FC<ResultsScreenProps> = ({
         style={{
           flex: 1,
           display: 'grid',
-          gridTemplateColumns: 'minmax(340px, 420px) 1fr',
-          gap: '32px',
-          padding: '36px 48px',
+          gridTemplateColumns: 'repeat(auto-fit, minmax(min(100%, 340px), 1fr))',
+          gap: '24px',
+          padding: 'clamp(20px, 3vw, 40px)',
           overflowY: 'auto'
         }}
       >
@@ -298,18 +300,18 @@ export const ResultsScreen: React.FC<ResultsScreenProps> = ({
           </div>
 
           {/* Quick Nav Footer */}
-          <div style={{ display: 'flex', gap: '14px', marginTop: 'auto' }}>
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: '14px', marginTop: 'auto' }}>
             <button
               onClick={onMainMenu}
               className="tactical-btn"
-              style={{ flex: 1, padding: '14px', fontSize: '0.88rem' }}
+              style={{ flex: 1, minWidth: 'min(100%, 200px)', padding: '14px', fontSize: '0.88rem' }}
             >
               <Home size={18} /> RETURN TO MAIN MENU
             </button>
             <button
               onClick={onOpenAAR}
               className="tactical-btn tactical-btn-primary"
-              style={{ flex: 2, padding: '14px', fontSize: '0.92rem' }}
+              style={{ flex: 2, minWidth: 'min(100%, 240px)', padding: '14px', fontSize: '0.92rem' }}
             >
               DRILL DOWN INTO AFTER-ACTION REVIEW (AAR) <ArrowRight size={18} />
             </button>

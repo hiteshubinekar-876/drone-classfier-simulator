@@ -1,8 +1,9 @@
 import React, { useState, useEffect } from 'react';
-import { DroneThreatClass, THREAT_CATALOG } from '../../types';
+import { DroneThreatClass, THREAT_CATALOG, KeyAction } from '../../types';
 import { TargetLockInfo } from '../../game/assessment/TargetTracker';
 import { Crosshair, CheckCircle2, X } from 'lucide-react';
 import { audio } from '../../game/assessment/AudioService';
+import { inputManager, formatKeyDisplay } from '../../services/inputManager';
 
 interface ClassificationDrawerProps {
   targetLock: TargetLockInfo;
@@ -17,6 +18,8 @@ export const ClassificationDrawer: React.FC<ClassificationDrawerProps> = ({
 }) => {
   const [selectedClass, setSelectedClass] = useState<DroneThreatClass>('quadcopter_surveillance');
   const [confidence, setConfidence] = useState<'confirmed' | 'suspected'>('confirmed');
+  const [isSubmitting, setIsSubmitting] = useState<boolean>(false);
+  const [feedbackStatus, setFeedbackStatus] = useState<'idle' | 'accepted'>('idle');
 
   const threatKeys: DroneThreatClass[] = [
     'quadcopter_surveillance',
@@ -25,98 +28,142 @@ export const ClassificationDrawer: React.FC<ClassificationDrawerProps> = ({
     'civilian_toy'
   ];
 
-  // Hotkey support
+  const archetypeActions: KeyAction[] = [
+    'selectArchetype1',
+    'selectArchetype2',
+    'selectArchetype3',
+    'selectArchetype4'
+  ];
+
+  // Hotkey support with inputManager, debounce, and e.repeat prevention
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.key === '1') setSelectedClass('quadcopter_surveillance');
-      if (e.key === '2') setSelectedClass('fixed_wing_recon');
-      if (e.key === '3') setSelectedClass('micro_uav');
-      if (e.key === '4') setSelectedClass('civilian_toy');
-      if (e.key === 'Escape') {
+      if (e.repeat || isSubmitting || inputManager.isInputElement(e.target)) return;
+
+      if (inputManager.matchesAction(e, 'selectArchetype1')) {
+        e.preventDefault();
+        setSelectedClass('quadcopter_surveillance');
+      } else if (inputManager.matchesAction(e, 'selectArchetype2')) {
+        e.preventDefault();
+        setSelectedClass('fixed_wing_recon');
+      } else if (inputManager.matchesAction(e, 'selectArchetype3')) {
+        e.preventDefault();
+        setSelectedClass('micro_uav');
+      } else if (inputManager.matchesAction(e, 'selectArchetype4')) {
+        e.preventDefault();
+        setSelectedClass('civilian_toy');
+      } else if (inputManager.matchesAction(e, 'cancelDrawer')) {
+        e.preventDefault();
+        e.stopPropagation();
         onCancel();
-      }
-      if (e.key === 'Enter') {
+      } else if (inputManager.matchesAction(e, 'submitClassification')) {
+        e.preventDefault();
         handleSubmit();
       }
     };
 
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [selectedClass, confidence]);
+  }, [selectedClass, confidence, isSubmitting, onCancel]);
 
   const handleSubmit = () => {
+    if (isSubmitting) return;
+    setIsSubmitting(true);
+    setFeedbackStatus('accepted');
     audio.playClassificationSubmit();
-    onSubmit(selectedClass, confidence);
+
+    setTimeout(() => {
+      onSubmit(selectedClass, confidence);
+    }, 380);
   };
 
   return (
     <div
       style={{
         position: 'absolute',
-        bottom: '24px',
+        bottom: '16px',
         left: '50%',
         transform: 'translateX(-50%)',
-        width: 'min(94vw, 680px)',
+        width: 'min(96vw, 680px)',
+        maxHeight: '88dvh',
+        overflowY: 'auto',
         zIndex: 50,
-        pointerEvents: 'auto'
+        pointerEvents: 'auto',
+        border: feedbackStatus === 'accepted' ? '1px solid var(--color-success-green)' : '1px solid var(--color-border-subtle)',
+        boxShadow: feedbackStatus === 'accepted' ? '0 0 32px rgba(92, 214, 143, 0.4)' : 'var(--shadow-elevation)',
+        transition: 'border-color 0.2s ease, box-shadow 0.2s ease'
       }}
       className="tactical-panel"
     >
-      <div style={{ padding: '16px 20px', borderBottom: '1px solid var(--color-border-subtle)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+      <div style={{ padding: '14px 18px', borderBottom: '1px solid var(--color-border-subtle)', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '8px' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-          <Crosshair size={20} color="var(--color-accent-mint)" />
+          <Crosshair size={20} color={feedbackStatus === 'accepted' ? 'var(--color-success-green)' : 'var(--color-accent-mint)'} />
           <div>
             <div className="tactical-header-tag">AERIAL CONTACT CLASSIFICATION</div>
-            <div style={{ fontSize: '1rem', fontWeight: 700, color: 'var(--color-text-primary)' }}>
+            <div style={{ fontSize: '0.95rem', fontWeight: 700, color: 'var(--color-text-primary)' }}>
               CONTACT TRACK: <span style={{ color: 'var(--color-accent-mint)' }}>{targetLock.callsign}</span>
             </div>
           </div>
         </div>
 
-        <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
-          <div style={{ fontFamily: 'var(--font-mono)', fontSize: '0.8rem', color: 'var(--color-text-secondary)' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '14px' }}>
+          <div style={{ fontFamily: 'var(--font-mono)', fontSize: '0.78rem', color: 'var(--color-text-secondary)' }}>
             RNG: <strong style={{ color: 'var(--color-text-primary)' }}>{targetLock.distanceMeters}m</strong> | BRG: <strong style={{ color: 'var(--color-text-primary)' }}>{targetLock.bearingDeg}°</strong>
           </div>
           <button
             onClick={onCancel}
-            style={{ color: 'var(--color-text-muted)', display: 'flex', padding: '4px' }}
-            title="Cancel (Esc)"
+            disabled={isSubmitting}
+            style={{ color: 'var(--color-text-muted)', display: 'flex', padding: '4px', cursor: isSubmitting ? 'not-allowed' : 'pointer' }}
+            title={`Cancel (${formatKeyDisplay(inputManager.getBinding('cancelDrawer'))})`}
           >
-            <X size={20} />
+            <X size={18} />
           </button>
         </div>
       </div>
 
-      <div style={{ padding: '16px 20px' }}>
-        <div style={{ fontSize: '0.8rem', color: 'var(--color-text-secondary)', marginBottom: '10px' }}>
-          SELECT RECOGNITION ARCHETYPE (Keys 1–4):
+      <div style={{ padding: '16px 18px' }}>
+        <div style={{ fontSize: '0.78rem', color: 'var(--color-text-secondary)', marginBottom: '10px', display: 'flex', justifyContent: 'space-between', flexWrap: 'wrap', gap: '6px' }}>
+          <span>SELECT RECOGNITION ARCHETYPE:</span>
+          {feedbackStatus === 'accepted' && (
+            <span style={{ color: 'var(--color-success-green)', fontFamily: 'var(--font-mono)', fontWeight: 700 }}>
+              ✓ CLASSIFICATION ACCEPTED & RECORDED
+            </span>
+          )}
         </div>
 
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(260px, 1fr))', gap: '10px' }}>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(min(100%, 250px), 1fr))', gap: '10px' }}>
           {threatKeys.map((key, idx) => {
             const meta = THREAT_CATALOG[key];
             const isSelected = selectedClass === key;
+            const archetypeAction = archetypeActions[idx] || 'selectArchetype1';
+            const keyLabel = formatKeyDisplay(inputManager.getBinding(archetypeAction));
 
             return (
               <div
                 key={key}
-                onClick={() => setSelectedClass(key)}
+                onClick={() => {
+                  if (!isSubmitting) setSelectedClass(key);
+                }}
                 style={{
                   padding: '12px',
                   borderRadius: '6px',
                   border: isSelected
-                    ? '1px solid var(--color-accent-mint)'
+                    ? feedbackStatus === 'accepted'
+                      ? '1px solid var(--color-success-green)'
+                      : '1px solid var(--color-accent-mint)'
                     : '1px solid rgba(141, 217, 192, 0.12)',
                   background: isSelected
-                    ? 'rgba(141, 217, 192, 0.12)'
+                    ? feedbackStatus === 'accepted'
+                      ? 'rgba(92, 214, 143, 0.18)'
+                      : 'rgba(141, 217, 192, 0.12)'
                     : 'rgba(23, 35, 41, 0.6)',
-                  cursor: 'pointer',
+                  cursor: isSubmitting ? 'default' : 'pointer',
                   transition: 'all 0.15s ease'
                 }}
               >
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '4px' }}>
-                  <span style={{ fontFamily: 'var(--font-mono)', fontSize: '0.75rem', color: 'var(--color-accent-mint)' }}>
-                    [{idx + 1}] {meta.category}
+                  <span style={{ fontFamily: 'var(--font-mono)', fontSize: '0.75rem', color: isSelected ? 'var(--color-accent-mint)' : 'var(--color-text-secondary)', fontWeight: isSelected ? 700 : 500 }}>
+                    [{keyLabel}] {meta.category}
                   </span>
                   <span
                     style={{
@@ -144,7 +191,7 @@ export const ClassificationDrawer: React.FC<ClassificationDrawerProps> = ({
                 <div style={{ fontWeight: 600, fontSize: '0.85rem', color: 'var(--color-text-primary)' }}>
                   {meta.displayName}
                 </div>
-                <div style={{ fontSize: '0.75rem', color: 'var(--color-text-muted)', marginTop: '4px', lineHeight: 1.3 }}>
+                <div style={{ fontSize: '0.74rem', color: 'var(--color-text-muted)', marginTop: '4px', lineHeight: 1.3 }}>
                   {meta.visualIndicators[0]}
                 </div>
               </div>
@@ -153,12 +200,15 @@ export const ClassificationDrawer: React.FC<ClassificationDrawerProps> = ({
         </div>
 
         {/* Confidence Selector & Confirm */}
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '16px', paddingTop: '14px', borderTop: '1px solid var(--color-border-subtle)' }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '16px', paddingTop: '14px', borderTop: '1px solid var(--color-border-subtle)', flexWrap: 'wrap', gap: '12px' }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-            <span style={{ fontSize: '0.8rem', color: 'var(--color-text-secondary)', fontFamily: 'var(--font-mono)' }}>CONFIDENCE:</span>
+            <span style={{ fontSize: '0.78rem', color: 'var(--color-text-secondary)', fontFamily: 'var(--font-mono)' }}>CONFIDENCE:</span>
             <button
-              onClick={() => setConfidence('confirmed')}
+              onClick={() => {
+                if (!isSubmitting) setConfidence('confirmed');
+              }}
               className="tactical-btn"
+              disabled={isSubmitting}
               style={{
                 padding: '4px 10px',
                 fontSize: '0.75rem',
@@ -169,8 +219,11 @@ export const ClassificationDrawer: React.FC<ClassificationDrawerProps> = ({
               Confirmed
             </button>
             <button
-              onClick={() => setConfidence('suspected')}
+              onClick={() => {
+                if (!isSubmitting) setConfidence('suspected');
+              }}
               className="tactical-btn"
+              disabled={isSubmitting}
               style={{
                 padding: '4px 10px',
                 fontSize: '0.75rem',
@@ -183,15 +236,21 @@ export const ClassificationDrawer: React.FC<ClassificationDrawerProps> = ({
           </div>
 
           <div style={{ display: 'flex', gap: '10px' }}>
-            <button onClick={onCancel} className="tactical-btn" style={{ padding: '8px 14px', fontSize: '0.8rem' }}>
-              Cancel (Esc)
+            <button onClick={onCancel} disabled={isSubmitting} className="tactical-btn" style={{ padding: '8px 14px', fontSize: '0.8rem' }}>
+              Cancel ({formatKeyDisplay(inputManager.getBinding('cancelDrawer'))})
             </button>
             <button
               onClick={handleSubmit}
-              className="tactical-btn tactical-btn-primary"
-              style={{ padding: '8px 18px', fontSize: '0.8rem' }}
+              disabled={isSubmitting}
+              className={`tactical-btn ${feedbackStatus === 'accepted' ? '' : 'tactical-btn-primary'}`}
+              style={{
+                padding: '8px 18px',
+                fontSize: '0.8rem',
+                background: feedbackStatus === 'accepted' ? 'var(--color-success-green)' : undefined,
+                color: feedbackStatus === 'accepted' ? '#0c1417' : undefined
+              }}
             >
-              <CheckCircle2 size={16} /> Submit (Enter)
+              <CheckCircle2 size={16} /> {feedbackStatus === 'accepted' ? 'Recorded...' : `Submit (${formatKeyDisplay(inputManager.getBinding('submitClassification'))})`}
             </button>
           </div>
         </div>

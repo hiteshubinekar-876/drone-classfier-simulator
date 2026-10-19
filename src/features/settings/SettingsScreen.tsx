@@ -1,13 +1,15 @@
 import React, { useState } from 'react';
 import { UserSettings, DEFAULT_SETTINGS, GraphicsPreset } from '../../types';
 import { storage } from '../../data/indexedDbAdapter';
+import { ControlsSettingsPanel } from './ControlsSettingsPanel';
 import {
   ArrowLeft,
   Monitor,
   Volume2,
   Sliders,
   Check,
-  RotateCcw
+  RotateCcw,
+  Keyboard
 } from 'lucide-react';
 
 interface SettingsScreenProps {
@@ -23,6 +25,7 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
 }) => {
   const [settings, setSettings] = useState<UserSettings>(currentSettings);
   const [saveNotice, setSaveNotice] = useState<boolean>(false);
+  const [activeTab, setActiveTab] = useState<'system' | 'controls'>('system');
 
   const handlePresetChange = (preset: GraphicsPreset) => {
     let updated: Partial<UserSettings> = { graphicsPreset: preset };
@@ -71,8 +74,8 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
   return (
     <div
       style={{
-        width: '100vw',
-        height: '100vh',
+        width: '100%',
+        height: '100dvh',
         display: 'flex',
         flexDirection: 'column',
         background: 'linear-gradient(135deg, #0c1417 0%, #131f24 50%, #070c0e 100%)',
@@ -82,12 +85,14 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
       {/* Top Header */}
       <header
         style={{
-          height: '64px',
+          minHeight: '64px',
           borderBottom: '1px solid var(--color-border-subtle)',
-          padding: '0 32px',
+          padding: '12px clamp(16px, 3vw, 32px)',
           display: 'flex',
           alignItems: 'center',
           justifyContent: 'space-between',
+          flexWrap: 'wrap',
+          gap: '12px',
           background: 'rgba(15, 24, 28, 0.85)',
           backdropFilter: 'blur(10px)',
           zIndex: 20
@@ -107,7 +112,7 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
           </div>
         </div>
 
-        <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '12px', flexWrap: 'wrap' }}>
           {saveNotice && (
             <span style={{ fontFamily: 'var(--font-mono)', fontSize: '0.78rem', color: 'var(--color-success-green)', display: 'flex', alignItems: 'center', gap: '4px' }}>
               <Check size={14} /> SETTINGS PERSISTED
@@ -123,14 +128,57 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
         </div>
       </header>
 
+      {/* Settings Navigation Tabs */}
+      <div
+        style={{
+          display: 'flex',
+          gap: '12px',
+          padding: '12px clamp(16px, 3vw, 32px)',
+          borderBottom: '1px solid var(--color-border-subtle)',
+          background: 'rgba(12, 20, 23, 0.75)',
+          backdropFilter: 'blur(8px)',
+          flexWrap: 'wrap'
+        }}
+      >
+        <button
+          onClick={() => setActiveTab('system')}
+          className="tactical-btn"
+          style={{
+            padding: '8px 18px',
+            fontSize: '0.82rem',
+            borderColor: activeTab === 'system' ? 'var(--color-accent-mint)' : 'var(--color-border-subtle)',
+            background: activeTab === 'system' ? 'rgba(141, 217, 192, 0.2)' : 'transparent',
+            color: activeTab === 'system' ? '#ffffff' : 'var(--color-text-secondary)',
+            fontWeight: activeTab === 'system' ? 700 : 500
+          }}
+        >
+          <Sliders size={15} /> SYSTEM & GRAPHICS
+        </button>
+        <button
+          onClick={() => setActiveTab('controls')}
+          className="tactical-btn"
+          style={{
+            padding: '8px 18px',
+            fontSize: '0.82rem',
+            borderColor: activeTab === 'controls' ? 'var(--color-accent-mint)' : 'var(--color-border-subtle)',
+            background: activeTab === 'controls' ? 'rgba(141, 217, 192, 0.2)' : 'transparent',
+            color: activeTab === 'controls' ? '#ffffff' : 'var(--color-text-secondary)',
+            fontWeight: activeTab === 'controls' ? 700 : 500
+          }}
+        >
+          <Keyboard size={15} /> CONTROLS / KEY BINDINGS
+        </button>
+      </div>
+
       {/* Main Settings Grid */}
+      {activeTab === 'system' ? (
       <div
         style={{
           flex: 1,
           display: 'grid',
-          gridTemplateColumns: 'repeat(auto-fit, minmax(360px, 1fr))',
-          gap: '28px',
-          padding: '36px 48px',
+          gridTemplateColumns: 'repeat(auto-fit, minmax(min(100%, 320px), 1fr))',
+          gap: '24px',
+          padding: 'clamp(20px, 3vw, 40px)',
           overflowY: 'auto'
         }}
       >
@@ -269,17 +317,51 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
           <div style={{ marginBottom: '20px' }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.8rem', color: 'var(--color-text-secondary)', marginBottom: '8px' }}>
               <span>MOUSE LOOK SENSITIVITY:</span>
-              <span style={{ fontFamily: 'var(--font-mono)', color: 'var(--color-accent-mint)' }}>{settings.mouseSensitivity.toFixed(1)}x</span>
+              <span style={{ fontFamily: 'var(--font-mono)', color: 'var(--color-accent-mint)' }}>{settings.mouseSensitivity.toFixed(2)}x</span>
             </div>
             <input
               type="range"
-              min="0.2"
-              max="2.5"
-              step="0.1"
+              min="0.1"
+              max="3.0"
+              step="0.05"
               value={settings.mouseSensitivity}
               onChange={(e) => handleChange('mouseSensitivity', Number(e.target.value))}
               style={{ width: '100%', accentColor: 'var(--color-accent-mint)' }}
             />
+            <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.68rem', color: 'var(--color-text-muted)', marginTop: '4px', fontFamily: 'var(--font-mono)' }}>
+              <span>0.1x (Fine)</span>
+              <span>1.0x (Standard)</span>
+              <span>3.0x (Fast)</span>
+            </div>
+          </div>
+
+          {/* Target Observation Pacing */}
+          <div style={{ marginBottom: '20px' }}>
+            <label style={{ fontSize: '0.8rem', color: 'var(--color-text-secondary)', display: 'block', marginBottom: '8px' }}>
+              TARGET OBSERVATION WINDOW PACING:
+            </label>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '8px' }}>
+              {(['standard', 'extended', 'relaxed'] as const).map((pacing) => (
+                <button
+                  key={pacing}
+                  onClick={() => handleChange('targetObservationPacing', pacing)}
+                  className="tactical-btn"
+                  style={{
+                    padding: '8px 6px',
+                    fontSize: '0.74rem',
+                    textTransform: 'uppercase',
+                    borderColor: settings.targetObservationPacing === pacing ? 'var(--color-accent-mint)' : 'var(--color-border-subtle)',
+                    background: settings.targetObservationPacing === pacing ? 'rgba(141, 217, 192, 0.2)' : 'transparent',
+                    color: settings.targetObservationPacing === pacing ? '#ffffff' : 'var(--color-text-secondary)'
+                  }}
+                >
+                  {pacing === 'standard' ? 'Standard (1.0x)' : pacing === 'extended' ? 'Extended (1.35x)' : 'Relaxed (1.7x)'}
+                </button>
+              ))}
+            </div>
+            <div style={{ fontSize: '0.72rem', color: 'var(--color-text-muted)', marginTop: '6px' }}>
+              Extends aerial target transit window so trainees have extra time to observe visual markers.
+            </div>
           </div>
 
           {/* Invert Pitch */}
@@ -300,7 +382,7 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', paddingTop: '12px', borderTop: '1px solid var(--color-border-subtle)' }}>
             <div>
               <div style={{ fontSize: '0.85rem', fontWeight: 600 }}>REDUCED MOTION MODE</div>
-              <div style={{ fontSize: '0.74rem', color: 'var(--color-text-muted)' }}>Minimizes camera transitions and lens vibrations</div>
+              <div style={{ fontSize: '0.74rem', color: 'var(--color-text-muted)' }}>Raw 1:1 camera tracking without inertial smoothing</div>
             </div>
             <input
               type="checkbox"
@@ -309,8 +391,40 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
               style={{ width: '18px', height: '18px', accentColor: 'var(--color-accent-mint)', cursor: 'pointer' }}
             />
           </div>
+
+          {/* Jump to Controls Button */}
+          <div style={{ marginTop: '20px', paddingTop: '16px', borderTop: '1px solid var(--color-border-subtle)' }}>
+            <button
+              onClick={() => setActiveTab('controls')}
+              className="tactical-btn tactical-btn-primary"
+              style={{ width: '100%', padding: '10px', fontSize: '0.82rem' }}
+            >
+              <Keyboard size={16} /> CONFIGURE KEY BINDINGS...
+            </button>
+          </div>
         </div>
       </div>
+      ) : (
+        <div
+          style={{
+            flex: 1,
+            padding: 'clamp(20px, 3vw, 40px)',
+            overflowY: 'auto'
+          }}
+        >
+          <ControlsSettingsPanel
+            currentSettings={settings}
+            onUpdateSettings={(newCfg) => {
+              setSettings(newCfg);
+              save(newCfg);
+            }}
+            onSaveNotice={() => {
+              setSaveNotice(true);
+              setTimeout(() => setSaveNotice(false), 1500);
+            }}
+          />
+        </div>
+      )}
     </div>
   );
 };

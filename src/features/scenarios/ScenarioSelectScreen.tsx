@@ -34,8 +34,8 @@ export const ScenarioSelectScreen: React.FC<ScenarioSelectScreenProps> = ({
   return (
     <div
       style={{
-        width: '100vw',
-        height: '100vh',
+        width: '100%',
+        height: '100dvh',
         display: 'flex',
         flexDirection: 'column',
         background: 'linear-gradient(135deg, #0c1417 0%, #131f24 50%, #070c0e 100%)',
@@ -45,12 +45,14 @@ export const ScenarioSelectScreen: React.FC<ScenarioSelectScreenProps> = ({
       {/* Top Header */}
       <header
         style={{
-          height: '64px',
+          minHeight: '64px',
           borderBottom: '1px solid var(--color-border-subtle)',
-          padding: '0 32px',
+          padding: '12px clamp(16px, 3vw, 32px)',
           display: 'flex',
           alignItems: 'center',
           justifyContent: 'space-between',
+          flexWrap: 'wrap',
+          gap: '12px',
           background: 'rgba(15, 24, 28, 0.85)',
           backdropFilter: 'blur(10px)',
           zIndex: 20
@@ -71,7 +73,7 @@ export const ScenarioSelectScreen: React.FC<ScenarioSelectScreenProps> = ({
         </div>
 
         {/* Filter Tabs */}
-        <div style={{ display: 'flex', gap: '6px' }}>
+        <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap' }}>
           {(['all', 'beginner', 'intermediate', 'advanced'] as const).map((tab) => (
             <button
               key={tab}
@@ -96,10 +98,10 @@ export const ScenarioSelectScreen: React.FC<ScenarioSelectScreenProps> = ({
       <div
         style={{
           flex: 1,
-          padding: '36px 48px',
+          padding: 'clamp(20px, 3vw, 40px)',
           overflowY: 'auto',
           display: 'grid',
-          gridTemplateColumns: 'repeat(auto-fit, minmax(360px, 1fr))',
+          gridTemplateColumns: 'repeat(auto-fit, minmax(min(100%, 320px), 1fr))',
           gap: '24px',
           alignContent: 'start'
         }}
